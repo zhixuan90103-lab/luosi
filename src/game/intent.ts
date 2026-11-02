@@ -9,7 +9,7 @@ import { gapCovers, signedDelta } from './angle';
 import { barById, moveBar, projectBar, ringById, rotateRing, syncPins, type BarBody, type Board } from './board';
 import { VIEW_H } from './camera';
 import { PART, buckleMetrics } from './parts';
-import { barCovers, barSegment, barStillInBuckle, buckleCovers, ringCovers } from './volume';
+import { barCovers, barSegment, barStillInBuckle, buckleCovers, grownHandleEdge, pointOnGrownHandle, ringCovers } from './volume';
 
 /** Outer grab past a ring's outer radius, as a fraction of that radius. */
 export const INTENT_PAD = 0.1;
@@ -21,14 +21,16 @@ export const INTENT_SLEEVE = 0.02;
 export const INTENT_CLEAR = 0.01;
 /** Bar grab past the drawn capsule, as a fraction of that bar's radius. Inside a hole the same margin counts as a hit. */
 export const INTENT_BAR_REACH = 0.9;
+/** Finger area used only when the point hits nothing, as a fraction of design width. About 18 design pixels. */
+export const INTENT_FINGER = 18 / DESIGN_WIDTH;
 
 /**
  * One table with `docs/ROTATE-RINGS.md` §4. Lower wins.
- * The gaps between bands are larger than `moves + clearAxis`.
+ * Adjacent gaps are 6, 4, 2, and 6. A stuck band never spends `moves` or `clearAxis`.
  */
 const SCORE = {
-  liveSolid: 0,
-  liveFoot: 6,
+  solid: 0,
+  foot: 6,
   stuckSolid: 10,
   stuckFoot: 12,
   pad: 18,
@@ -40,6 +42,8 @@ const SCORE = {
   /** Crosses every band, so a clear stroke in a gap mouth can pick the other piece. */
   gapSwing: 20,
   lock: 0.75,
+  /** Beats `lock` only inside the same band. A stuck handle (10 − 1) still loses to a live solid or live foot. */
+  handle: 1,
   axis: 1.5,
 } as const;
 
@@ -59,6 +63,8 @@ export type IntentHit = {
   near: number;
   /** The ray hit this piece. A tie-break only. */
   ray: boolean;
+  /** The press is on this ring's handle. The 1 point lead applies inside the same band only. */
+  onHandle: boolean;
 };
 
 /** World length of a design-width fraction at the current camera zoom. */
@@ -132,8 +138,9 @@ function hitOf(
   pos: boolean,
   near: number,
   ray: boolean,
+  onHandle = false,
 ): IntentHit {
-  return { kind, id, place, neg, pos, near, ray };
+  return { kind, id, place, neg, pos, near, ray, onHandle };
 }
 
 const PLACE_RANK: Record<IntentPlace, number> = { solid: 0, foot: 1, pad: 2 };
@@ -166,7 +173,7 @@ function distToBar(bar: BarBody, x: number, y: number): number {
  * Every piece the press could mean. A closer place on the same piece replaces a farther one.
  * The ray never adds a piece that the geometry missed.
  */
-export function listCandidates(board: Board, x: number, y: number, _pad: number, rayIds: string[] = []): IntentHit[] {
+export function listCandidates(board: Board, x: number, y: number, _pad: number, rayIds: string[] = [], finger = 0): IntentHit[] {
   const hits: IntentHit[] = [];
   const put = (hit: IntentHit) => {
     const at = hits.findIndex((item) => item.id === hit.id);
@@ -181,7 +188,9 @@ export function listCandidates(board: Board, x: number, y: number, _pad: number,
     const ray = rayIds.includes(ring.id);
     const d = dist(ring.x, ring.y, x, y);
     const mid = (ring.inner + ring.outer) / 2;
-    if (ringCovers(ring, x, y)) put(hitOf('ring', ring.id, 'solid', free.neg, free.pos, Math.abs(d - mid), ray));
+    if (ringCovers(ring, x, y)) {
+      put(hitOf('ring', ring.id, 'solid', free.neg, free.pos, Math.abs(d - mid), ray, pointOnGrownHandle(ring, x, y)));
+    }
     else if (d <= ring.outer) put(hitOf('ring', ring.id, 'foot', free.neg, free.pos, d, false));
     else if ((free.neg || free.pos) && d <= ring.outer * (1 + INTENT_PAD)) {
       put(hitOf('ring', ring.id, 'pad', free.neg, free.pos, d - ring.outer, ray));
@@ -202,7 +211,46 @@ export function listCandidates(board: Board, x: number, y: number, _pad: number,
       else if (near !== null) put(hitOf('bar', bar.id, 'pad', free.neg, free.pos, near, ray));
     }
   }
+  if (hits.length === 0 && finger > 0) {
+    const nearest = nearestEdge(board, x, y, finger);
+    if (nearest) {
+      const free = freedomOf(board, nearest.kind, nearest.id);
+      hits.push(hitOf(nearest.kind, nearest.id, 'solid', free.neg, free.pos, nearest.distance, rayIds.includes(nearest.id)));
+    }
+  }
   return hits;
+}
+
+/** Distance from a missed point to the nearest drawn edge, when it is inside the finger radius. */
+function nearestEdge(board: Board, x: number, y: number, finger: number): { kind: 'ring' | 'bar'; id: string; distance: number } | null {
+  let best: { kind: 'ring' | 'bar'; id: string; distance: number } | null = null;
+  const consider = (kind: 'ring' | 'bar', id: string, distance: number) => {
+    if (distance > finger) return;
+    if (!best || distance < best.distance) best = { kind, id, distance };
+  };
+  for (const ring of board.rings) consider('ring', ring.id, ringEdge(ring, x, y));
+  for (const bar of board.bars) consider('bar', bar.id, Math.max(0, distToBar(bar, x, y) - bar.half));
+  return best;
+}
+
+function ringEdge(ring: Parameters<typeof ringCovers>[0], x: number, y: number): number {
+  if (ringCovers(ring, x, y)) return 0;
+  const dx = x - ring.x;
+  const dy = y - ring.y;
+  const d = Math.hypot(dx, dy);
+  let best = Infinity;
+  if (!gapCovers(ring.theta, Math.atan2(dy, dx), ring.gap)) {
+    if (d < ring.inner) best = ring.inner - d;
+    else best = Math.abs(d - ring.outer);
+  } else {
+    const mid = (ring.inner + ring.outer) / 2;
+    const cap = (ring.outer - ring.inner) / 2;
+    for (const sign of [-1, 1]) {
+      const a = ring.theta + sign * ring.gap / 2;
+      best = Math.min(best, Math.hypot(x - (ring.x + Math.cos(a) * mid), y - (ring.y + Math.sin(a) * mid)) - cap);
+    }
+  }
+  return Math.max(0, Math.min(best, grownHandleEdge(ring, x, y)));
 }
 
 function inRingHole(board: Board, x: number, y: number): boolean {
@@ -271,8 +319,8 @@ export function operates(
 
 function band(hit: IntentHit): number {
   const stuck = !hit.neg && !hit.pos;
-  if (hit.place === 'solid') return stuck ? SCORE.stuckSolid : SCORE.liveSolid;
-  if (hit.place === 'foot') return stuck ? SCORE.stuckFoot : SCORE.liveFoot;
+  if (hit.place === 'solid') return stuck ? SCORE.stuckSolid : SCORE.solid;
+  if (hit.place === 'foot') return stuck ? SCORE.stuckFoot : SCORE.foot;
   return SCORE.pad;
 }
 
@@ -283,7 +331,7 @@ function nearness(hit: IntentHit): number {
 }
 
 function intentScore(hit: IntentHit, along: number, cross: number, gesture: boolean, swing: number): number {
-  let score = band(hit) + nearness(hit) - (hit.ray ? SCORE.ray : 0);
+  let score = band(hit) + nearness(hit) - (hit.ray ? SCORE.ray : 0) - (hit.onHandle ? SCORE.handle : 0);
   if (!gesture || !moves(hit, along)) return score;
   score -= SCORE.moves;
   if (Math.abs(along) > Math.abs(cross) * SCORE.axis) score -= SCORE.clearAxis + swing;

@@ -34,10 +34,11 @@ import { LEVELS } from './levels';
 import level1 from '../../public/levels/1.json';
 import { dragEffect, mountFeedback } from './feedback';
 import { breakPraise, clearPoints, freshPraise, notePraiseClear, showPraise, type PraiseCombo } from './praise';
-import { barCovers, strikePoint } from './volume';
+import { barCovers, pointOnGrownHandle, strikePoint } from './volume';
 import { pulseHaptic } from './hapticFeel';
 import {
   INTENT_CLEAR,
+  INTENT_FINGER,
   INTENT_PAD,
   INTENT_SLEEVE,
   INTENT_WINDOW,
@@ -194,6 +195,8 @@ export function mountPlay(options: {
   let pending: { hits: IntentHit[]; x0: number; y0: number; dx: number; dy: number; samples: { x: number; y: number }[] } | null = null;
   let seeking = false;
   let seekAt: { x: number; y: number } | null = null;
+  /** Press point of the current immovable seek. Travel to the piece underneath is measured from here. */
+  let seekOrigin: { x: number; y: number } | null = null;
   let seekId: string | null = null;
   let seekAlong = 0;
   let seekCross = 0;
@@ -520,6 +523,7 @@ export function mountPlay(options: {
 
   /** Ids that were already lit. A new id is the brighten, and that fires one pulse. */
   let readyLit = new Set<string>();
+  let readyPose = '';
 
   /**
    * Only call site for the ready glow. Skips the editor and a missing drag, skips falling views, and does not nudge.
@@ -528,8 +532,14 @@ export function mountPlay(options: {
     if (editing || !drag) {
       feedback.hint([]);
       readyLit = new Set();
+      readyPose = '';
       return;
     }
+    const ring = drag.kind === 'ring' ? ringById(board, drag.id) : null;
+    const bar = drag.kind === 'bar' ? barById(board, drag.id) : null;
+    const pose = ring ? `r:${drag.id}:${ring.theta}` : bar ? `b:${drag.id}:${bar.t}` : '';
+    if (pose === readyPose) return;
+    readyPose = pose;
     const ids = new Set(previewClear(board, drag));
     let brightened = false;
     for (const id of ids) {
@@ -689,6 +699,7 @@ export function mountPlay(options: {
     pending = null;
     seeking = false;
     seekAt = null;
+    seekOrigin = null;
     seekId = null;
     seekAlong = 0;
     seekCross = 0;
@@ -791,7 +802,14 @@ export function mountPlay(options: {
     const world = designToWorld(point.dx, point.dy);
     loosened = new Set();
     const ray = pickByRay(world);
-    const hits = listCandidates(board, world.x, world.y, intentWorld(INTENT_PAD, camera.zoom), ray ? [ray.id] : []);
+    const hits = listCandidates(
+      board,
+      world.x,
+      world.y,
+      intentWorld(INTENT_PAD, camera.zoom),
+      ray ? [ray.id] : [],
+      intentWorld(INTENT_FINGER, camera.zoom),
+    );
     pointerId = event.pointerId;
     lastStamp = event.timeStamp;
     canvas.setPointerCapture(event.pointerId);
@@ -831,7 +849,6 @@ export function mountPlay(options: {
     return fresh.length > 0 ? fresh : [event];
   }
 
-  /** Outer circle only. A handle past that circle is already outside the contour. */
   function insideContour(id: string, world: { x: number; y: number }): boolean {
     const ring = ringById(board, id);
     if (ring) return Math.hypot(world.x - ring.x, world.y - ring.y) <= ring.outer;
@@ -842,14 +859,26 @@ export function mountPlay(options: {
   /**
    * Piece under the finger while still choosing.
    * An operable piece stays until another hit leads, so a near tie does not wipe its travel.
-   * An immovable ring stays tight only inside its outer circle, including the hole.
-   * The stem is not that circle: once the finger is past the outer radius, release even if the stem still hits.
    */
   function winnerAt(world: { x: number; y: number }): IntentHit | null {
-    if (seekId && seekRefuse && seekHit && seekHit.id === seekId && insideContour(seekId, world)) return seekHit;
     const ray = pickByRay(world);
     const clear = intentWorld(INTENT_CLEAR, camera.zoom);
     const hits = listCandidates(board, world.x, world.y, 0, ray ? [ray.id] : []);
+    const from = seekAt;
+    if (seekId && seekRefuse && from) {
+      const origin = seekOrigin ?? from;
+      const operated = hits.find((hit) => {
+        if (hit.id === seekId || (!hit.neg && !hit.pos)) return false;
+        const travel = strokeTravel(board, hit, origin.x, origin.y, world.x, world.y);
+        const along = Math.abs(travel.along);
+        return along >= clear && along >= Math.abs(travel.cross) && ((travel.along > 0 && hit.pos) || (travel.along < 0 && hit.neg));
+      });
+      if (operated) return operated;
+      const kept = hits.find((hit) => hit.id === seekId);
+      const ring = ringById(board, seekId);
+      const onHandle = ring != null && pointOnGrownHandle(ring, world.x, world.y);
+      if (kept && (insideContour(seekId, world) || onHandle)) return kept;
+    }
     const kept = seekId ? (hits.find((hit) => hit.id === seekId) ?? null) : null;
     const others = seekId && seekRefuse ? hits.filter((hit) => hit.id !== seekId) : hits;
     const lead = chooseIntent(board, hits, world.x, world.y, world.x, world.y, false, clear);
@@ -862,6 +891,9 @@ export function mountPlay(options: {
   }
 
   function storeAim(aim: Aim): void {
+    if (aim.id !== seekId) seekOrigin = aim.refuse ? aim.at : null;
+    else if (!aim.refuse) seekOrigin = null;
+    else if (seekOrigin == null) seekOrigin = aim.at;
     seekAt = aim.at;
     seekId = aim.id;
     seekAlong = aim.along;
@@ -873,7 +905,7 @@ export function mountPlay(options: {
     const ring = ringById(board, id);
     const bar = barById(board, id);
     const kind = ring ? 'ring' : 'bar';
-    const along = from ? strokeTravel(board, { kind, id, place: 'solid', neg: false, pos: false, near: 0, ray: false }, from.x, from.y, to.x, to.y).along : 0;
+    const along = from ? strokeTravel(board, { kind, id, place: 'solid', neg: false, pos: false, near: 0, ray: false, onHandle: false }, from.x, from.y, to.x, to.y).along : 0;
     const sign = Math.abs(along) > 1e-4 ? along : 1;
     loosened.add(id);
     if (ring) {
@@ -970,6 +1002,7 @@ export function mountPlay(options: {
         pending = null;
         seeking = true;
         seekAt = null;
+        seekOrigin = null;
         seekId = null;
         seekAlong = 0;
         seekCross = 0;
@@ -1115,6 +1148,7 @@ export function mountPlay(options: {
     pending = null;
     seeking = false;
     seekAt = null;
+    seekOrigin = null;
     seekId = null;
     seekAlong = 0;
     seekCross = 0;

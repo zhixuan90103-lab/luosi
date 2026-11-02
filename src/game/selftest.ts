@@ -588,9 +588,9 @@ stacked.pins.push({
 const overlap = listCandidates(stacked, -0.55, 0, pad);
 assert(overlap.filter((hit) => hit.place === 'solid').length === 2, 'a handle and a ring are both solids');
 const preferHost = chooseIntent(stacked, overlap, -0.55, 0, -0.55, 0, false);
-assert(preferHost == null, 'a cutting arc sticks both rings, so the press waits');
+assert(preferHost?.id === 'owner', 'a press on the handle selects its owner before a slide');
 const heldHost = chooseIntent(stacked, overlap, -0.55, 0, -0.55, 0, true);
-assert(heldHost?.id === 'host', 'with both rings stuck, the press stays on the ring under the handle');
+assert(heldHost?.id === 'owner', 'with both rings stuck, the handle still wins after the window');
 const inHole = emptyBoard();
 inHole.volumes = false;
 inHole.rings.push(

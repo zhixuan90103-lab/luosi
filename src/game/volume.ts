@@ -213,9 +213,9 @@ function inBox(box: { x: number; y: number; angle: number; length: number; width
   return Math.abs(lx) <= box.length / 2 && Math.abs(ly) <= box.width / 2;
 }
 
-/** Drawn ring metal: band with the gap removed, both caps, stem, and clasp. */
+/** Pick shape: drawn band, caps, and the same grown handle the bar collides with. */
 export function ringCovers(ring: RingBody, x: number, y: number): boolean {
-  return ringHolds(ring, x, y);
+  return ringHolds(ring, x, y) || pointOnGrownHandle(ring, x, y);
 }
 
 /** Drawn capsule. The silver buckle is not part of the bar. */
@@ -408,10 +408,124 @@ export function buckleOverlapAmount(bar: BarBody, ring: RingBody, px: number, py
   return amount;
 }
 
+/** Bar versus handle only. Drawn stem and clasp, grown so the bar meets the handle sooner. */
+export const BAR_HANDLE_SCALE = 1.45;
+
+export function barHandleShapes(ring: RingBody): { boxes: Box[]; arcs: ClaspArc[] } {
+  const frame = ringFrame(ring);
+  const boxes: Box[] = [];
+  const arcs: ClaspArc[] = [];
+  for (const box of frame.boxes) {
+    boxes.push({
+      x: box.x,
+      y: box.y,
+      angle: box.angle,
+      length: box.length * BAR_HANDLE_SCALE,
+      width: box.width * BAR_HANDLE_SCALE,
+    });
+  }
+  for (const arc of frame.arcs) {
+    arcs.push({
+      cx: arc.cx,
+      cy: arc.cy,
+      radius: arc.radius,
+      half: arc.half * BAR_HANDLE_SCALE,
+      width: arc.width * BAR_HANDLE_SCALE,
+      mid: arc.mid,
+    });
+  }
+  return { boxes, arcs };
+}
+
+/** The press is inside the grown stem or clasp. Containment is `inBox` / `inClasp`. */
+export function pointOnGrownHandle(ring: RingBody, x: number, y: number): boolean {
+  const shapes = barHandleShapes(ring);
+  return shapes.boxes.some((box) => inBox(box, x, y)) || shapes.arcs.some((arc) => inClasp(arc, x, y));
+}
+
+/** Distance to the grown handle. Zero exactly where `pointOnGrownHandle` is true. */
+export function grownHandleEdge(ring: RingBody, x: number, y: number): number {
+  if (pointOnGrownHandle(ring, x, y)) return 0;
+  const shapes = barHandleShapes(ring);
+  let best = Infinity;
+  for (const box of shapes.boxes) best = Math.min(best, boxEdge(box, x, y));
+  for (const arc of shapes.arcs) best = Math.min(best, arcEdge(arc, x, y));
+  return best;
+}
+
+function boxEdge(box: Box, x: number, y: number): number {
+  const dx = x - box.x;
+  const dy = y - box.y;
+  const c = Math.cos(box.angle);
+  const s = Math.sin(box.angle);
+  const lx = Math.abs(c * dx + s * dy) - box.length / 2;
+  const ly = Math.abs(-s * dx + c * dy) - box.width / 2;
+  return Math.hypot(Math.max(lx, 0), Math.max(ly, 0));
+}
+
+function arcEdge(arc: ClaspArc, x: number, y: number): number {
+  const dx = x - arc.cx;
+  const dy = y - arc.cy;
+  let da = Math.atan2(dy, dx) - arc.mid;
+  while (da > Math.PI) da -= Math.PI * 2;
+  while (da < -Math.PI) da += Math.PI * 2;
+  const inner = arc.radius - arc.width / 2;
+  const outer = arc.radius + arc.width / 2;
+  if (Math.abs(da) <= arc.half) {
+    const radial = Math.hypot(dx, dy);
+    if (radial >= inner && radial <= outer) return 0;
+    return radial < inner ? inner - radial : radial - outer;
+  }
+  const end = arc.mid + Math.sign(da) * arc.half;
+  const radial = Math.min(Math.max(Math.hypot(dx, dy), inner), outer);
+  const ex = arc.cx + Math.cos(end) * radial;
+  const ey = arc.cy + Math.sin(end) * radial;
+  return Math.hypot(x - ex, y - ey);
+}
+
+function barMeetsHandle(bar: BarBody, t: number, ring: RingBody): number {
+  if (ring.connectors.length === 0) return 0;
+  const shapes = barHandleShapes(ring);
+  const seg = barSegment(bar, t);
+  let amount = 0;
+  const touch = (x: number, y: number) => {
+    const gap = bar.half - distToSegment(x, y, seg.ax, seg.ay, seg.bx, seg.by);
+    if (gap > 0) amount += gap;
+  };
+  for (const box of shapes.boxes) {
+    const c = Math.cos(box.angle);
+    const s = Math.sin(box.angle);
+    for (let ix = 0; ix <= 6; ix++) {
+      for (let iy = 0; iy <= 2; iy++) {
+        const lx = -box.length / 2 + (box.length * ix) / 6;
+        const ly = -box.width / 2 + (box.width * iy) / 2;
+        touch(box.x + c * lx - s * ly, box.y + s * lx + c * ly);
+      }
+    }
+  }
+  for (const arc of shapes.arcs) {
+    for (let i = 0; i <= 8; i++) {
+      const a = arc.mid - arc.half + (2 * arc.half * i) / 8;
+      for (const k of [-0.4, 0, 0.4]) {
+        const radius = arc.radius + arc.width * k;
+        touch(arc.cx + Math.cos(a) * radius, arc.cy + Math.sin(a) * radius);
+      }
+    }
+  }
+  for (let i = 0; i <= 16; i++) {
+    const u = i / 16;
+    const x = seg.ax + (seg.bx - seg.ax) * u;
+    const y = seg.ay + (seg.by - seg.ay) * u;
+    if (shapes.boxes.some((box) => inBox(box, x, y)) || shapes.arcs.some((arc) => inClasp(arc, x, y))) amount += bar.half;
+  }
+  return amount;
+}
+
 /** How far the bar body is inside this ring. Zero means the drawn capsule is clear. */
 export function barOverlapAmount(bar: BarBody, t: number, ring: RingBody): number {
   const seg = barSegment(bar, t);
-  if (distToSegment(ring.x, ring.y, seg.ax, seg.ay, seg.bx, seg.by) >= solidReach(ring) + bar.half) return 0;
+  const handlePad = ring.connectors.length === 0 ? 0 : ring.outer * PART.bandRatio * BAR_HANDLE_SCALE;
+  if (distToSegment(ring.x, ring.y, seg.ax, seg.ay, seg.bx, seg.by) >= solidReach(ring) + bar.half + handlePad) return 0;
   let amount = 0;
   visitRingSamples(ring, (x, y) => {
     const gap = bar.half - distToSegment(x, y, seg.ax, seg.ay, seg.bx, seg.by);
@@ -424,7 +538,7 @@ export function barOverlapAmount(bar: BarBody, t: number, ring: RingBody): numbe
     const y = seg.ay + (seg.by - seg.ay) * u;
     if (ringHolds(ring, x, y)) amount += bar.half;
   }
-  return amount;
+  return amount + barMeetsHandle(bar, t, ring);
 }
 
 export function barHitsRing(bar: BarBody, t: number, ring: RingBody): boolean {

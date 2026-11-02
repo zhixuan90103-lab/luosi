@@ -26,7 +26,7 @@ export type AimStep =
 
 /**
  * Which hit this sample follows while the finger is still choosing.
- * An immovable piece stays only while the finger is inside its outer contour.
+ * `inside` is only the outer contour, or the drawn bar. The grown-handle hold is `winnerAt`'s early return, not this flag.
  * An operable piece stays until another hit leads, so a near tie does not wipe its travel.
  * `rest` is the best hit after the current immovable piece has been removed.
  */

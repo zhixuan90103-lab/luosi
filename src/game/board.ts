@@ -26,6 +26,7 @@ import {
   claspDragBlocked,
   claspPoses,
   connectorHitsRing,
+  type ClaspPose,
 } from './volume';
 
 export type RingBody = {
@@ -175,23 +176,35 @@ function overlapGrew(before: number, now: number): boolean {
   return (before <= 1e-4 && now > 1e-4) || (before > 1e-4 && now > before + 1e-4);
 }
 
-function ringBlockDepth(board: Board, ring: RingBody): number {
+function ringBlockDepth(board: Board, ring: RingBody, stopAt = Infinity): number {
   let depth = 0;
   for (const bar of board.bars) {
     depth += barOverlapAmount(bar, bar.t, ring);
+    if (depth > stopAt) return depth;
     const buckle = board.latches.find((latch) => latch.barId === bar.id && latch.release === 'sleeve');
     if (buckle) depth += buckleOverlapAmount(bar, ring, buckle.x, buckle.y);
+    if (depth > stopAt) return depth;
   }
   return depth;
 }
 
-function barBlockDepth(board: Board, bar: BarBody, t: number): number {
+function barBlockDepth(board: Board, bar: BarBody, t: number, stopAt = Infinity): number {
   let depth = 0;
-  for (const ring of board.rings) depth += barOverlapAmount(bar, t, ring);
+  for (const ring of board.rings) {
+    depth += barOverlapAmount(bar, t, ring);
+    if (depth > stopAt) return depth;
+  }
   for (const other of board.bars) {
-    if (other.id !== bar.id) depth += barsOverlapAmount(bar, t, other);
+    if (other.id === bar.id) continue;
+    depth += barsOverlapAmount(bar, t, other);
+    if (depth > stopAt) return depth;
   }
   return depth;
+}
+
+/** Past this depth, `overlapGrew` is already true, so the rest of the sum cannot change the answer. */
+function grewLimit(before: number): number {
+  return before <= 1e-4 ? 1e-4 : before + 1e-4;
 }
 
 /** Smallest accepted slice. A larger stride never skips a solid this thin. */
@@ -205,14 +218,19 @@ function ringStride(ring: RingBody): number {
   return Math.max(FINE_ANGLE, thin / Math.max(reach, 0.2));
 }
 
-function ringSliceBlocked(board: Board, ring: RingBody, from: number, to: number): boolean {
-  ring.theta = from;
-  syncPins(board);
-  const depthBefore = ringBlockDepth(board, ring);
-  const tiesBefore = claspPoses(board, ring);
+function ringSliceBlocked(
+  board: Board,
+  ring: RingBody,
+  depthBefore: number,
+  tiesBefore: ClaspPose[],
+  to: number,
+): boolean {
   ring.theta = to;
   syncPins(board);
-  return claspDragBlocked(tiesBefore, claspPoses(board, ring)) || overlapGrew(depthBefore, ringBlockDepth(board, ring));
+  return (
+    claspDragBlocked(tiesBefore, claspPoses(board, ring)) ||
+    overlapGrew(depthBefore, ringBlockDepth(board, ring, grewLimit(depthBefore)))
+  );
 }
 
 /** Largest prefix of `step` that stays legal. A failed far pose is not kept. */
@@ -234,11 +252,15 @@ function takePrefix(step: number, fine: number, blocked: (distance: number) => b
 
 function takeRing(board: Board, ring: RingBody, sign: number, step: number): number {
   const from = ring.theta;
+  ring.theta = from;
+  syncPins(board);
+  const depthBefore = ringBlockDepth(board, ring);
+  const tiesBefore = claspPoses(board, ring).map((pose) => ({ ...pose }));
   const at = (distance: number) => wrapAngle(from + sign * distance);
   return takePrefix(
     step,
     FINE_ANGLE,
-    (distance) => ringSliceBlocked(board, ring, from, at(distance)),
+    (distance) => ringSliceBlocked(board, ring, depthBefore, tiesBefore, at(distance)),
     (distance) => {
       ring.theta = at(distance);
       syncPins(board);
@@ -301,16 +323,17 @@ function barStride(board: Board, bar: BarBody): number {
   return Math.max(FINE_T, thin / rail);
 }
 
-function barSliceBlocked(board: Board, bar: BarBody, from: number, to: number): boolean {
-  return overlapGrew(barBlockDepth(board, bar, from), barBlockDepth(board, bar, to));
+function barSliceBlocked(board: Board, bar: BarBody, depthBefore: number, to: number): boolean {
+  return overlapGrew(depthBefore, barBlockDepth(board, bar, to, grewLimit(depthBefore)));
 }
 
 function takeBar(board: Board, bar: BarBody, sign: number, step: number): number {
   const from = bar.t;
+  const depthBefore = barBlockDepth(board, bar, from);
   return takePrefix(
     step,
     FINE_T,
-    (distance) => barSliceBlocked(board, bar, from, from + sign * distance),
+    (distance) => barSliceBlocked(board, bar, depthBefore, from + sign * distance),
     (distance) => {
       bar.t = from + sign * distance;
     },

@@ -64,7 +64,7 @@ export function mountFeedback(root: THREE.Object3D) {
     });
   }
 
-  /** A lighter shade of the piece color. Callers skip this while impact owns the mesh. `level` is 0..1. */
+  /** Unchanged base color, plus emissive of that same color. Callers skip this while impact owns the mesh. `level` is 0..1. */
   function paintHint(mesh: THREE.Object3D, level: number): void {
     mesh.traverse((node) => {
       const material = (node as THREE.Mesh).material;
