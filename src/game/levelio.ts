@@ -1,4 +1,5 @@
 import type { Board, RingBody } from './board';
+import { pinLocks, stockNuts } from './screws';
 import { syncPins } from './board';
 import { wrapAngle } from './angle';
 import { boardBounds } from './camera';
@@ -135,6 +136,9 @@ function normalizeLevel(data: Board): Board {
   data.pins ??= [];
   data.latches ??= [];
   data.volumes = true;
+  data.screws ??= [];
+  if (data.screws.length > 0 && !data.nuts) data.nuts = stockNuts(data.screws);
+  for (const screw of data.screws) pinLocks(screw);
   for (const ring of data.rings) ring.connectors ??= [];
   stripHandlePins(data);
   return data;

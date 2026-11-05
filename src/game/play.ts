@@ -12,7 +12,8 @@ import {
   isInDesignBounds,
   type StageLayout,
 } from '../adapt/design';
-import { PART, barWithBuckle, discRing, ringWithConnectors } from './parts';
+import { aimNut, nutMesh, PART, barWithBuckle, discRing, ringWithConnectors, screwMesh } from './parts';
+import { nutAt, nutAxis, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, slideNut, slideScrew } from './screws';
 import {
   beginDrag,
   cancelDrag,
@@ -187,6 +188,14 @@ export function mountPlay(options: {
   let views: PieceView[] = [];
   let markers: THREE.Object3D[] = [];
   let shatters: Shatter[] = [];
+  let nutViews: { id: string; mesh: THREE.Mesh }[] = [];
+  let screwViews: { id: string; mesh: THREE.Object3D }[] = [];
+  let fallers: { mesh: THREE.Object3D; vx: number; vy: number; spin: number }[] = [];
+  let nutDrag: { id: string; t0: number; x: number; y: number } | null = null;
+  let nutStopped = false;
+  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number } | null = null;
+  let screwStopped = false;
+  let buckleViews: { screwId: string; mesh: THREE.Object3D }[] = [];
   let drag: Drag | null = null;
   let dragMoved = false;
   let nudgeSign = 0;
@@ -455,6 +464,28 @@ export function mountPlay(options: {
     }
     views = [];
     markers = [];
+    for (const view of nutViews) {
+      disposeObject(view.mesh);
+      root.remove(view.mesh);
+    }
+    nutViews = [];
+    for (const view of screwViews) {
+      disposeObject(view.mesh);
+      root.remove(view.mesh);
+    }
+    screwViews = [];
+    for (const faller of fallers) {
+      disposeObject(faller.mesh);
+      root.remove(faller.mesh);
+    }
+    fallers = [];
+    for (const buckle of buckleViews) {
+      disposeObject(buckle.mesh);
+      root.remove(buckle.mesh);
+    }
+    buckleViews = [];
+    nutDrag = null;
+    screwDrag = null;
     for (const shatter of shatters) disposeShatter(shatter);
     shatters = [];
   }
@@ -691,6 +722,35 @@ export function mountPlay(options: {
     return { dx, dy };
   }
 
+  function finishLoose(cancel: boolean): void {
+    if (nutDrag && cancel) {
+      const nut = board.nuts?.find((item) => item.id === nutDrag?.id);
+      if (nut && nutDrag) nut.t = nutDrag.t0;
+      if (nut) placeNutMesh(nut.id);
+    }
+    nutDrag = null;
+    nutStopped = false;
+    if (!screwDrag) return;
+    const drag = screwDrag;
+    screwDrag = null;
+    screwStopped = false;
+    const screw = board.screws?.find((item) => item.id === drag.id);
+    if (!screw) return;
+    if (cancel || screwHeld(screw, board.nuts ?? [])) {
+      if (cancel) {
+        screw.x = drag.x0;
+        screw.y = drag.y0;
+        placeScrew(screw.id);
+      }
+      return;
+    }
+    const axis = screwSlideAxis(screw);
+    const along = (screw.x - drag.x0) * axis.x + (screw.y - drag.y0) * axis.y;
+    const sign = Math.sign(along) || 1;
+    dropScrew(screw.id, axis.x * sign * 0.8, axis.y * sign * 0.8);
+    pulseHaptic('clear');
+  }
+
   function dropPiece(cancel: boolean): void {
     if (drag && cancel) cancelDrag(board, drag);
     if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
@@ -781,10 +841,16 @@ export function mountPlay(options: {
     else if (effect === 'settle') {
       lockPending(true);
       if (drag) endDrag(false);
-      else dropPiece(false);
+      else {
+        finishLoose(false);
+        dropPiece(false);
+      }
     } else if (effect === 'revert') {
       if (drag) endDrag(true);
-      else dropPiece(true);
+      else {
+        finishLoose(true);
+        dropPiece(true);
+      }
     }
   }
 
@@ -800,6 +866,26 @@ export function mountPlay(options: {
     if (step.effect !== 'begin-piece') return;
     if (hold || pointerId !== null) return;
     const world = designToWorld(point.dx, point.dy);
+    const nut = nutAt(board.nuts ?? [], board.screws ?? [], world.x, world.y);
+    if (nut) {
+      pointerId = event.pointerId;
+      lastStamp = event.timeStamp;
+      canvas.setPointerCapture(event.pointerId);
+      nutDrag = { id: nut.id, t0: nut.t, x: world.x, y: world.y };
+      nutStopped = false;
+      pulseHaptic('grab');
+      return;
+    }
+    const screw = screwAt(board.screws ?? [], board.nuts ?? [], world.x, world.y);
+    if (screw) {
+      pointerId = event.pointerId;
+      lastStamp = event.timeStamp;
+      canvas.setPointerCapture(event.pointerId);
+      screwDrag = { id: screw.id, x0: screw.x, y0: screw.y, x: world.x, y: world.y };
+      screwStopped = false;
+      pulseHaptic('grab');
+      return;
+    }
     loosened = new Set();
     const ray = pickByRay(world);
     const hits = listCandidates(
@@ -972,6 +1058,16 @@ export function mountPlay(options: {
       }
     }
     if (hold || event.pointerId !== pointerId) return;
+    if (nutDrag) {
+      const world = worldFromEvent(event, false);
+      if (world) moveNut(world);
+      return;
+    }
+    if (screwDrag) {
+      const world = worldFromEvent(event, false);
+      if (world) moveScrew(world);
+      return;
+    }
     const points = pointerPoints(event);
     if (seeking) {
       let rejected = 0;
@@ -1071,6 +1167,97 @@ export function mountPlay(options: {
     syncMeshes();
   }
 
+  function placeNutMesh(id: string): void {
+    const nut = board.nuts?.find((item) => item.id === id);
+    const screw = board.screws?.find((item) => item.id === nut?.screwId);
+    const view = nutViews.find((item) => item.id === id);
+    if (!nut || !screw || !view) return;
+    const at = nutWorld(screw, nut);
+    view.mesh.position.set(at.x, at.y, 0);
+    const axis = nutAxis(screw, nut);
+    aimNut(view.mesh, axis.x, axis.y);
+    view.mesh.rotateZ(nutSpin(nut.t));
+  }
+
+  function dropMesh(mesh: THREE.Object3D, vx: number, vy: number): void {
+    const view = nutViews.find((item) => item.mesh === mesh);
+    if (view) nutViews = nutViews.filter((item) => item !== view);
+    screwViews = screwViews.filter((item) => item.mesh !== mesh);
+    fallers.push({ mesh, vx, vy, spin: (Math.random() - 0.5) * 4 });
+  }
+
+  function placeScrew(id: string): void {
+    const screw = board.screws?.find((item) => item.id === id);
+    const view = screwViews.find((item) => item.id === id);
+    if (!screw || !view) return;
+    view.mesh.position.set(screw.x, screw.y, 0);
+    for (const nut of board.nuts ?? []) {
+      if (nut.screwId === id) placeNutMesh(nut.id);
+    }
+  }
+
+  function dropScrew(id: string, vx: number, vy: number): void {
+    const view = screwViews.find((item) => item.id === id);
+    const nuts = (board.nuts ?? []).filter((nut) => nut.screwId === id);
+    board.screws = (board.screws ?? []).filter((screw) => screw.id !== id);
+    board.nuts = (board.nuts ?? []).filter((nut) => nut.screwId !== id);
+    if (view) dropMesh(view.mesh, vx, vy);
+    for (const nut of nuts) {
+      const nutView = nutViews.find((item) => item.id === nut.id);
+      if (nutView) dropMesh(nutView.mesh, vx, vy);
+    }
+    for (const buckle of buckleViews) {
+      if (buckle.screwId !== id) continue;
+      dropMesh(buckle.mesh, vx, vy);
+    }
+    buckleViews = buckleViews.filter((buckle) => buckle.screwId !== id);
+    noteClear();
+  }
+
+  function moveScrew(world: { x: number; y: number }): void {
+    if (!screwDrag || !board.screws) return;
+    const dragId = screwDrag.id;
+    const screw = board.screws.find((item) => item.id === dragId);
+    if (!screw) return;
+    const axis = screwSlideAxis(screw);
+    const along = (world.x - screwDrag.x) * axis.x + (world.y - screwDrag.y) * axis.y;
+    screw.x = screwDrag.x0;
+    screw.y = screwDrag.y0;
+    const result = slideScrew(board.screws, board.nuts ?? [], screw.id, axis.x * along, axis.y * along);
+    if (result.blocked && !screwStopped) pulseHaptic('hit');
+    screwStopped = result.blocked;
+    placeScrew(screw.id);
+  }
+
+  function moveNut(world: { x: number; y: number }): void {
+    if (!nutDrag || !board.nuts || !board.screws) return;
+    const dragId = nutDrag.id;
+    const nut = board.nuts.find((item) => item.id === dragId);
+    const screw = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
+    if (!nut || !screw) return;
+    const axis = nutAxis(screw, nut);
+    const target = nutDrag.t0 + (world.x - nutDrag.x) * axis.x + (world.y - nutDrag.y) * axis.y;
+    const result = slideNut(board.nuts, board.screws, nut.id, target);
+    if (result.exited) {
+      const view = nutViews.find((item) => item.id === dragId);
+      if (view) dropMesh(view.mesh, axis.x * 2.4, axis.y * 2.4);
+      nutDrag = null;
+      nutStopped = false;
+      pulseHaptic('clear');
+      noteClear();
+      return;
+    }
+    if (result.blocked && !nutStopped) pulseHaptic('hit');
+    nutStopped = result.blocked;
+    placeNutMesh(nut.id);
+  }
+
+  function noteClear(): void {
+    const screwsLeft = board.screws?.length ?? 0;
+    const nutsLeft = board.nuts?.length ?? 0;
+    if (board.rings.length === 0 && board.bars.length === 0 && screwsLeft === 0 && nutsLeft === 0) awaitingNext = true;
+  }
+
   function endDrag(cancel: boolean): void {
     if (!drag) return;
     if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
@@ -1141,7 +1328,7 @@ export function mountPlay(options: {
       }
       if (scored > 0) onScore?.(scored);
       if (left.length > 0) pulseHaptic('clear');
-      if (board.rings.length === 0 && board.bars.length === 0) awaitingNext = true;
+      noteClear();
     }
     drag = null;
     dragMoved = false;
@@ -1200,6 +1387,37 @@ export function mountPlay(options: {
       buckle.userData.barId = bar.id;
       root.add(buckle);
       markers.push(buckle);
+    }
+    for (const screw of board.screws ?? []) {
+      const mesh = screwMesh(screw.kind, depth * scale, screw.color ?? colorOf(screw.id));
+      mesh.position.set(screw.x, screw.y, 0);
+      mesh.rotation.z = screw.theta;
+      mesh.traverse((obj) => {
+        obj.userData.pieceId = screw.id;
+      });
+      root.add(mesh);
+      const buckles: THREE.Object3D[] = [];
+      mesh.traverse((obj) => {
+        if (obj.userData.buckle) buckles.push(obj);
+      });
+      for (const buckle of buckles) {
+        root.attach(buckle);
+        buckleViews.push({ screwId: screw.id, mesh: buckle });
+      }
+      screwViews.push({ id: screw.id, mesh });
+    }
+    for (const nut of board.nuts ?? []) {
+      const screw = board.screws?.find((item) => item.id === nut.screwId);
+      if (!screw) continue;
+      const mesh = nutMesh(depth * scale, nut.color);
+      mesh.userData.pieceId = nut.id;
+      const at = nutWorld(screw, nut);
+      mesh.position.set(at.x, at.y, 0);
+      const axis = nutAxis(screw, nut);
+      aimNut(mesh, axis.x, axis.y);
+      mesh.rotateZ(nutSpin(nut.t));
+      root.add(mesh);
+      nutViews.push({ id: nut.id, mesh });
     }
     root.traverse((obj) => {
       if (obj instanceof THREE.Mesh && !obj.userData.fakeShadow && !obj.userData.noShadow) obj.castShadow = true;
@@ -1319,8 +1537,30 @@ export function mountPlay(options: {
       applyPinch();
     }
     easeCamera(dt);
-    const viewBottom = camera.position.y - viewSize().h / 2 / Math.max(camera.zoom, 1e-4);
+    const view = viewSize();
+    const zoom = Math.max(camera.zoom, 1e-4);
+    const viewBottom = camera.position.y - view.h / 2 / zoom;
+    const viewTop = camera.position.y + view.h / 2 / zoom;
+    const viewLeft = camera.position.x - view.w / 2 / zoom;
+    const viewRight = camera.position.x + view.w / 2 / zoom;
     stepShatters(shatters, viewBottom - SHATTER.chip, dt);
+    let aliveFallers = 0;
+    for (const faller of fallers) {
+      faller.vy += -30 * dt;
+      faller.mesh.position.x += faller.vx * dt;
+      faller.mesh.position.y += faller.vy * dt;
+      faller.mesh.rotation.z += faller.spin * dt;
+      const x = faller.mesh.position.x;
+      const y = faller.mesh.position.y;
+      if (x < viewLeft - 0.8 || x > viewRight + 0.8 || y < viewBottom - 0.8 || y > viewTop + 0.8) {
+        disposeObject(faller.mesh);
+        root.remove(faller.mesh);
+        continue;
+      }
+      fallers[aliveFallers] = faller;
+      aliveFallers += 1;
+    }
+    fallers.length = aliveFallers;
     let aliveShatters = 0;
     for (let i = 0; i < shatters.length; i++) {
       const shatter = shatters[i];

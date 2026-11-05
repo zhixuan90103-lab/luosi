@@ -100,6 +100,27 @@ export type Latch = {
   release: 'sleeve' | 'window';
 };
 
+/** A screw body on the table. `theta` spins the local +X shaft in the XY plane. */
+export type ScrewBody = {
+  id: string;
+  kind: 'straight' | 'l' | 'u';
+  x: number;
+  y: number;
+  theta: number;
+  color?: number;
+  /** Silver buckles locked in world space. The screw slides through them. */
+  locks?: { x: number; y: number }[];
+};
+
+/** A nut parked on one straight run. `t` is the distance from that run's dead end. */
+export type NutBody = {
+  id: string;
+  screwId: string;
+  run: number;
+  t: number;
+  color: number;
+};
+
 export type Board = {
   rings: RingBody[];
   bars: BarBody[];
@@ -107,6 +128,9 @@ export type Board = {
   latches: Latch[];
   /** When set, ring and bar volumes block each other. */
   volumes?: boolean;
+  /** Shown as plastic screws. Nuts slide on their straight runs. */
+  screws?: ScrewBody[];
+  nuts?: NutBody[];
 };
 
 export type Drag =

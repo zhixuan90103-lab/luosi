@@ -8,7 +8,7 @@
 
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../adapt/design';
 import type { Board } from './board';
-import { buckleMetrics, connectorPoints, PART } from './parts';
+import { buckleMetrics, connectorPoints, PART, screwLocalBounds } from './parts';
 
 export const VIEW_H = 10;
 /** Empty design pixels kept around the level, inside the chrome. */
@@ -122,6 +122,16 @@ export function boardBounds(board: Board): Aabb {
     for (const along of [-sleeveLen / 2, sleeveLen / 2]) {
       for (const side of [-sleeveW / 2, sleeveW / 2]) {
         add(latch.x + ux * along + px * side, latch.y + uy * along + py * side);
+      }
+    }
+  }
+  for (const screw of board.screws ?? []) {
+    const local = screwLocalBounds(screw.kind);
+    const c = Math.cos(screw.theta);
+    const s = Math.sin(screw.theta);
+    for (const x of [local.minX, local.maxX]) {
+      for (const y of [local.minY, local.maxY]) {
+        add(screw.x + c * x - s * y, screw.y + s * x + c * y);
       }
     }
   }
