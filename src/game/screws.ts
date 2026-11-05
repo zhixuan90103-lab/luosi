@@ -699,6 +699,47 @@ export function slideScrew(
   return { blocked: false };
 }
 
+/**
+ * How far along `sign` this screw must slide to leave its own buckles.
+ * Null when it is already clear, the finger reversed, or something else
+ * still blocks inside `pad`. The screw is put back where it started.
+ */
+export function releaseSlack(
+  screws: ScrewBody[],
+  nuts: NutBody[],
+  id: string,
+  sign: number,
+  pad: number,
+): number | null {
+  if (sign === 0 || pad <= 0) return null;
+  const screw = screwOf(screws, id);
+  if (!screw || !screwHeld(screw, nuts)) return null;
+  const axis = screwSlideAxis(screw);
+  const originX = screw.x;
+  const originY = screw.y;
+  const place = (travel: number) => {
+    screw.x = originX + axis.x * sign * travel;
+    screw.y = originY + axis.y * sign * travel;
+  };
+  const free = (travel: number) => {
+    place(travel);
+    return !poseBlocked(screw, nuts, screws);
+  };
+  if (!free(pad)) {
+    place(0);
+    return null;
+  }
+  let lo = 0;
+  let hi = pad;
+  for (let step = 0; step < 16; step += 1) {
+    const mid = (lo + hi) / 2;
+    if (free(mid)) hi = mid;
+    else lo = mid;
+  }
+  place(0);
+  return hi;
+}
+
 /** One pointer sample. Projects the new point onto the slide axis and advances only that far. */
 export function dragScrew(
   screws: ScrewBody[],

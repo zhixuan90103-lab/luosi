@@ -9,11 +9,11 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from 
 import { mountOutline } from './outline';
 import { aimNut, nutMesh, PART, screwMesh } from './parts';
 import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
-import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut } from './screws';
+import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, releaseSlack, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
 import type { Board } from './board';
 import { contactLatch, mountFeedback, stepContact } from './feedback';
 import { pulseHaptic } from './hapticFeel';
-import { INTENT_CLEAR, axesParallel, intentWorld, strokeChoice } from './intent';
+import { INTENT_CLEAR, INTENT_SLEEVE, axesParallel, intentWorld, strokeChoice } from './intent';
 import {
   boardBounds,
   cameraForFit,
@@ -69,7 +69,7 @@ export function mountPlay(options: {
   const spinAxis = new THREE.Vector3();
   let fallerFront = FALL_FRONT;
   let nutDrag: { id: string; t0: number; x: number; y: number; armed: boolean; free: number } | null = null;
-  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number; armed: boolean; free: number } | null = null;
+  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number; armed: boolean; free: number; sign: number; broken: boolean } | null = null;
   let pending: { x: number; y: number; nutId: string; screwId: string } | null = null;
   const feedback = mountFeedback();
   const selectionOutline = mountOutline(renderer, scene, camera);
@@ -219,6 +219,14 @@ export function mountPlay(options: {
     if (!drag) return;
     const screw = board.screws.find((item) => item.id === drag.id);
     if (!screw) return;
+    if (!cancel && drag.sign !== 0 && !drag.broken && screwHeld(screw, board.nuts ?? [])) {
+      const gap = releaseSlack(board.screws, board.nuts ?? [], screw.id, drag.sign, intentWorld(INTENT_SLEEVE, camera.zoom));
+      if (gap !== null) {
+        const axis = screwSlideAxis(screw);
+        slideScrew(board.screws, board.nuts ?? [], screw.id, axis.x * drag.sign * (gap + 1e-3), axis.y * drag.sign * (gap + 1e-3));
+        placeScrew(screw.id);
+      }
+    }
     if (cancel || screwHeld(screw, board.nuts ?? [])) {
       if (cancel) {
         screw.x = drag.x0;
@@ -239,6 +247,13 @@ export function mountPlay(options: {
     const from = { x: screwDrag.x, y: screwDrag.y };
     screwDrag.x = world.x;
     screwDrag.y = world.y;
+    const axis = screwSlideAxis(screw);
+    const pushed = (world.x - from.x) * axis.x + (world.y - from.y) * axis.y;
+    const sign = Math.sign(pushed);
+    if (sign !== 0) {
+      if (screwDrag.sign === 0) screwDrag.sign = sign;
+      else if (sign !== screwDrag.sign) screwDrag.broken = true;
+    }
     const beforeX = screw.x;
     const beforeY = screw.y;
     const result = dragScrew(board.screws, board.nuts ?? [], screw.id, from, world);
@@ -334,7 +349,7 @@ export function mountPlay(options: {
   }
 
   function beginScrew(id: string, x: number, y: number, at: { x: number; y: number }): void {
-    screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch() };
+    screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch(), sign: 0, broken: false };
     pulseHaptic('grab');
   }
 
