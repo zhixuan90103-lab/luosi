@@ -12,7 +12,7 @@ import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, screwDeparture
 import { dragScrew, nutAxis, nutPastTip, nutSpin, nutWorld, piecesNear, releaseSlack, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew, toWorld } from './screws';
 import type { Board } from './board';
 import { contactLatch, mountFeedback, stepContact } from './feedback';
-import { pulseHaptic } from './hapticFeel';
+import { playHaptics } from './hapticsPlay';
 import { INTENT_CLEAR, INTENT_FINGER, intentWorld, moveAim, pressAim, releaseFlick, releasePad, rememberStroke, type Aim, type AimPiece, type StrokeSample } from './intent';
 import { onStageZoom, stageZoomValue, viewSize, worldFromDesign } from './camera';
 import { releaseFinish } from './finish';
@@ -71,10 +71,6 @@ export function mountPlay(options: {
   let awaitingNext = false;
 
   let last = performance.now();
-  const fpsEl = document.getElementById('hud-fps');
-  let fpsWindow = 0;
-  let fpsFrames = 0;
-  let fpsShown = -1;
 
   function designToWorld(dx: number, dy: number): { x: number; y: number } {
     return worldFromDesign(dx, dy, camera.position.x, camera.position.y, camera.zoom);
@@ -106,6 +102,7 @@ export function mountPlay(options: {
     feedback.clear();
     nutDrag = null;
     screwDrag = null;
+    playHaptics.stop();
   }
 
   function showLevel(): void {
@@ -208,6 +205,7 @@ export function mountPlay(options: {
   }
 
   function finishLoose(cancel: boolean): void {
+    playHaptics.stop();
     const drag = screwDrag;
     screwDrag = null;
     if (!drag) return;
@@ -231,7 +229,7 @@ export function mountPlay(options: {
       return;
     }
     dropScrew(screw.id);
-    pulseHaptic('clear');
+    playHaptics.pulse('clear');
   }
 
   function moveScrew(world: { x: number; y: number }): void {
@@ -251,8 +249,9 @@ export function mountPlay(options: {
     const beforeY = screw.y;
     const result = dragScrew(board.screws, board.nuts ?? [], screw.id, from, world);
     const moved = Math.hypot(screw.x - beforeX, screw.y - beforeY);
+    playHaptics.slide({ x: world.x, y: world.y, nowMs: performance.now(), halted: result.blocked });
     if (stepContact(screwDrag, moved, result.blocked)) {
-      pulseHaptic('hit');
+      playHaptics.pulse('hit');
       const view = screwViews.find((item) => item.id === screw.id);
       if (view) feedback.impact(view.mesh);
     }
@@ -274,8 +273,16 @@ export function mountPlay(options: {
     const before = nut.t;
     const result = slideNut(board.nuts, board.screws, nut.id, target);
     const moved = Math.abs(nut.t - before);
-    if (stepContact(nutDrag, moved, result.blocked)) {
-      pulseHaptic('hit');
+    const offRod = nutPastTip(screw, nut);
+    playHaptics.slide({
+      x: world.x,
+      y: world.y,
+      nowMs: performance.now(),
+      halted: offRod || result.blocked,
+      spinDelta: offRod || result.blocked ? undefined : nutSpin(nut.t) - nutSpin(before),
+    });
+    if (!offRod && stepContact(nutDrag, moved, result.blocked)) {
+      playHaptics.pulse('hit');
       const view = nutViews.find((item) => item.id === nut.id);
       if (view) feedback.impact(view.mesh);
     }
@@ -285,6 +292,7 @@ export function mountPlay(options: {
   }
 
   function releaseNut(): void {
+    playHaptics.stop();
     const drag = nutDrag;
     nutDrag = null;
     if (!drag || !board.nuts) return;
@@ -295,7 +303,7 @@ export function mountPlay(options: {
     const view = nutViews.find((item) => item.id === nut.id);
     board.nuts = board.nuts.filter((item) => item.id !== nut.id);
     if (view) dropMesh(view.mesh, nutDepartureSpin(axis));
-    pulseHaptic('clear');
+    playHaptics.pulse('clear');
     noteClear();
   }
 
@@ -313,12 +321,12 @@ export function mountPlay(options: {
 
   function beginNut(id: string, t0: number, x: number, y: number): void {
     nutDrag = { id, t0, x, y, ...contactLatch() };
-    pulseHaptic('grab');
+    playHaptics.pulse('grab');
   }
 
   function beginScrew(id: string, x: number, y: number, at: { x: number; y: number }): void {
     screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch(), sign: 0, samples: [{ t: performance.now(), x, y }] };
-    pulseHaptic('grab');
+    playHaptics.pulse('grab');
   }
 
   function aimPieces(world: { x: number; y: number }): AimPiece[] {
@@ -355,8 +363,20 @@ export function mountPlay(options: {
     canvas.setPointerCapture(event.pointerId);
   }
 
+  /** A finger on empty space is not a gesture. Aiming or dragging owns the pointer. */
+  function gestureOwnsPointer(): boolean {
+    return pointerId !== null && (nutDrag !== null || screwDrag !== null || aim.phase !== 'open');
+  }
+
+  function dropPointer(): void {
+    if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+    pointerId = null;
+  }
+
   function onPointerDown(event: PointerEvent): void {
-    if (pointerId !== null || awaitingNext) return;
+    if (awaitingNext || gestureOwnsPointer()) return;
+    dropPointer();
+    aim = { phase: 'off' };
     const world = worldFromEvent(event);
     if (!world) return;
     const stepped = pressAim(aimPieces(world), world.x, world.y);
@@ -380,8 +400,7 @@ export function mountPlay(options: {
 
   function onPointerUp(event: PointerEvent): void {
     if (event.pointerId !== pointerId) return;
-    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    pointerId = null;
+    dropPointer();
     aim = { phase: 'off' };
     if (screwDrag) {
       const world = worldFromEvent(event);
@@ -406,20 +425,10 @@ export function mountPlay(options: {
   canvas.addEventListener('pointercancel', onPointerUp);
 
   function tick(now: number): void {
+    playHaptics.settle(now);
     const frameDt = (now - last) / 1000;
     const dt = Math.min(0.05, frameDt);
     last = now;
-    fpsWindow += frameDt;
-    fpsFrames += 1;
-    if (fpsEl && fpsWindow >= 0.25) {
-      const fps = Math.round(fpsFrames / fpsWindow);
-      if (fps !== fpsShown) {
-        fpsShown = fps;
-        fpsEl.textContent = `${fps} FPS`;
-      }
-      fpsWindow = 0;
-      fpsFrames = 0;
-    }
     const view = viewSize();
     let alive = 0;
     for (const faller of fallers) {

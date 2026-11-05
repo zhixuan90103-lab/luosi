@@ -205,15 +205,6 @@ header {
   color: var(--ink);
 }
 
-.hud-fps {
-  margin-top: 2px;
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  color: var(--ink-dim);
-}
-
 .hud-counter {
   justify-self: center;
   display: flex;

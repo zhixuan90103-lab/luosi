@@ -12,7 +12,7 @@ import { outline } from 'three/addons/tsl/display/OutlineNode.js';
 
 const EDGE_THICKNESS = 1;
 const EDGE_STRENGTH = 3;
-/** Opacity eases toward the held piece, and toward clear after release. */
+/** Opacity eases out after release. Pressing a piece snaps the edge on. */
 const FADE = 14;
 /** Below this the mask is empty, so the frame skips the outline pass. */
 const GONE = 0.02;
@@ -54,12 +54,13 @@ export function mountOutline(
 
   return {
     follow(root, dt) {
-      if (root !== shown) {
+      if (root) {
         shown = root;
-        level = 0;
+        level = 1;
+      } else {
+        level += (0 - level) * Math.min(1, dt * FADE);
+        if (level < GONE) shown = null;
       }
-      level += ((root ? 1 : 0) - level) * Math.min(1, dt * FADE);
-      if (!root && level < GONE) shown = null;
       selected.length = 0;
       active = shown !== null && level > GONE;
       if (!active || !shown) {

@@ -13,6 +13,7 @@ public class AdvancedHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "playPattern", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stackImpact", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startContinuousHaptic", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateContinuousHaptic", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopContinuousHaptic", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setKeepAwake", returnType: CAPPluginReturnPromise),
     ]
@@ -264,8 +265,8 @@ public class AdvancedHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
             let event = CHHapticEvent(
                 eventType: .hapticContinuous,
                 parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 1)
                 ],
                 relativeTime: 0,
                 duration: duration
@@ -274,9 +275,36 @@ public class AdvancedHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
             let player = try engine?.makeAdvancedPlayer(with: pattern)
             try player?.start(atTime: CHHapticTimeImmediate)
             continuousPlayer = player
+            if let player = player {
+                let level = [
+                    CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: intensity, relativeTime: 0),
+                    CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: sharpness, relativeTime: 0),
+                ]
+                try player.sendParameters(level, atTime: CHHapticTimeImmediate)
+            }
             call.resolve()
         } catch {
             call.reject("Failed to start continuous haptic: \(error.localizedDescription)")
+        }
+    }
+
+    /// Live level of the running bed. Event intensity stays 1 so this value is the felt strength.
+    @objc func updateContinuousHaptic(_ call: CAPPluginCall) {
+        let intensity = min(1, max(0, call.getFloat("intensity") ?? 0.25))
+        let sharpness = min(1, max(0, call.getFloat("sharpness") ?? 0.3))
+        guard let player = continuousPlayer else {
+            call.resolve()
+            return
+        }
+        do {
+            let params = [
+                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: intensity, relativeTime: 0),
+                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: sharpness, relativeTime: 0),
+            ]
+            try player.sendParameters(params, atTime: CHHapticTimeImmediate)
+            call.resolve()
+        } catch {
+            call.reject("Failed to update continuous haptic: \(error.localizedDescription)")
         }
     }
 
