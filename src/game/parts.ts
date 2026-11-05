@@ -359,7 +359,9 @@ function addThreads(group: THREE.Group, x0: number, y0: number, x1: number, y1: 
     ));
   }
   const curve = new THREE.CatmullRomCurve3(points);
-  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, steps, radius * THREAD_TUBE, 5, false), material));
+  const thread = new THREE.Mesh(new THREE.TubeGeometry(curve, steps, radius * THREAD_TUBE, 5, false), material);
+  thread.userData.thread = true;
+  group.add(thread);
 }
 
 /** Eight-sided head. Local +Z is the bolt axis, same as a nut. Shaft leaves one face. */
@@ -573,12 +575,11 @@ export function aimNut(mesh: THREE.Object3D, dx: number, dy: number): void {
 }
 
 export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles?: { x: number; y: number }[]): THREE.Group {
-  void color;
   const group = new THREE.Group();
   const body = new THREE.Group();
   body.scale.z = 0.35;
   group.add(body);
-  const metal = new THREE.MeshStandardMaterial({ color: 0x9aa3a8, metalness: 0.22, roughness: 0.62 });
+  const metal = new THREE.MeshStandardMaterial({ color, metalness: 0.12, roughness: 0.32 });
   const radius = SHAFT_CORE;
   const r = SCREW.bend;
   const leg = SCREW.leg;
@@ -598,6 +599,7 @@ export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles
     addSweptShaft(body, samples, radius, metal, false);
     addThreads(body, headLength / 2, 0, SCREW.straight, 0, radius, metal);
     const head = new THREE.Mesh(headGeometry(depth), metal);
+    head.userData.head = true;
     head.quaternion.setFromUnitVectors(torusAxis, new THREE.Vector3(1, 0, 0));
     group.add(head);
     placeBuckle(seats[0].x, seats[0].y);

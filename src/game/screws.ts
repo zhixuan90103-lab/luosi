@@ -474,24 +474,34 @@ function nutBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[], nut:
   return false;
 }
 
+/** Distance along the run where the nut's back edge is past the round tip. */
+export function nutClearAt(screw: ScrewBody, nut: NutBody): number {
+  const run = runOf(screw.kind, nut.run);
+  const length = Math.hypot(run.x1 - run.x0, run.y1 - run.y0);
+  return length + SHAFT_RADIUS + NUT_HALF;
+}
+
+/** The nut is off the shaft, still held on the same axis until the finger lifts. */
+export function nutPastTip(screw: ScrewBody, nut: NutBody): boolean {
+  return nut.t >= nutClearAt(screw, nut) - 1e-3;
+}
+
 /**
- * Slide one nut along its run. Both ways follow the finger.
- * The open tip drops the nut. The dead end, a neighbour nut, or another screw stops it.
+ * Slide one nut along its run, and past the tip on that same line.
+ * The dead end, a neighbour nut, or another screw stops it. The tip does not.
  */
 export function slideNut(
   nuts: NutBody[],
   screws: ScrewBody[],
   id: string,
   target: number,
-): { blocked: boolean; exited: boolean } {
+): { blocked: boolean } {
   const nut = nuts.find((item) => item.id === id);
   const screw = nut ? screwOf(screws, nut.screwId) : undefined;
-  if (!nut || !screw) return { blocked: false, exited: false };
+  if (!nut || !screw) return { blocked: false };
   const run = runOf(screw.kind, nut.run);
-  const length = Math.hypot(run.x1 - run.x0, run.y1 - run.y0);
-  const clearAt = length + SHAFT_RADIUS + NUT_HALF;
   let lo = run.minT;
-  let hi = clearAt;
+  let hi = Number.POSITIVE_INFINITY;
   for (const other of nuts) {
     if (other.id === nut.id || other.screwId !== nut.screwId || other.run !== nut.run) continue;
     if (other.t < nut.t) lo = Math.max(lo, other.t + NUT_HALF * 2);
@@ -500,7 +510,7 @@ export function slideNut(
   const wanted = Math.min(hi, Math.max(lo, target));
   const from = nut.t;
   const dir = Math.sign(wanted - from);
-  if (dir === 0) return { blocked: false, exited: false };
+  if (dir === 0) return { blocked: false };
   let safe = from;
   let blocked = false;
   const steps = Math.max(1, Math.ceil(Math.abs(wanted - from) / 0.02));
@@ -522,12 +532,7 @@ export function slideNut(
     safe = t;
   }
   nut.t = safe;
-  if (safe >= clearAt - 1e-3) {
-    const index = nuts.indexOf(nut);
-    if (index >= 0) nuts.splice(index, 1);
-    return { blocked: false, exited: true };
-  }
-  return { blocked: blocked || Math.abs(safe - target) > 0.02, exited: false };
+  return { blocked: blocked || Math.abs(safe - target) > 0.02 };
 }
 
 /** Axis the screw slides on, the same way a capsule bar slides through its buckle. */
@@ -644,7 +649,12 @@ export function screwAt(screws: ScrewBody[], nuts: NutBody[], x: number, y: numb
   return best?.screw ?? null;
 }
 
-/** Slide the screw along its buckle. Other screws stop it. Returns how far it actually moved. */
+/**
+ * Move the screw from where it already is by this world delta.
+ * A drag feeds only the pointer's new projection. Replaying the whole
+ * gesture from the press repeats every contact test and drops the frame rate.
+ * The step is 0.02. The first pose that overlaps stops the move.
+ */
 export function slideScrew(
   screws: ScrewBody[],
   nuts: NutBody[],
@@ -687,5 +697,20 @@ export function slideScrew(
   }
   place(dist);
   return { blocked: false };
+}
+
+/** One pointer sample. Projects the new point onto the slide axis and advances only that far. */
+export function dragScrew(
+  screws: ScrewBody[],
+  nuts: NutBody[],
+  id: string,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): { blocked: boolean } {
+  const screw = screwOf(screws, id);
+  if (!screw) return { blocked: false };
+  const axis = screwSlideAxis(screw);
+  const along = (to.x - from.x) * axis.x + (to.y - from.y) * axis.y;
+  return slideScrew(screws, nuts, id, axis.x * along, axis.y * along);
 }
 

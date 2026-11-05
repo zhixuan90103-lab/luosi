@@ -201,6 +201,15 @@ header {
   color: #4a3b30;
 }
 
+.hud-fps {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #6e5b4a;
+}
+
 .hud-counter {
   justify-self: center;
   display: flex;

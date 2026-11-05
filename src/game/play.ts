@@ -6,11 +6,14 @@
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from '../adapt/design';
+import { mountOutline } from './outline';
 import { aimNut, nutMesh, PART, screwMesh } from './parts';
 import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
-import { nutAt, nutAxis, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
+import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut } from './screws';
 import type { Board } from './board';
+import { contactFeel, mountFeedback } from './feedback';
 import { pulseHaptic } from './hapticFeel';
+import { INTENT_CLEAR, axesParallel, intentWorld, strokeChoice } from './intent';
 import {
   boardBounds,
   cameraForFit,
@@ -65,10 +68,13 @@ export function mountPlay(options: {
   let fallers: ({ mesh: THREE.Object3D } & FallMotion)[] = [];
   const spinAxis = new THREE.Vector3();
   let fallerFront = FALL_FRONT;
-  let nutDrag: { id: string; t0: number; x: number; y: number } | null = null;
-  let nutStopped = false;
-  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number } | null = null;
-  let screwStopped = false;
+  let nutDrag: { id: string; t0: number; x: number; y: number; armed: boolean; free: number } | null = null;
+  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number; armed: boolean; free: number } | null = null;
+  let pending: { x: number; y: number; nutId: string; screwId: string } | null = null;
+  const feedback = mountFeedback();
+  const selectionOutline = mountOutline(renderer, scene, camera);
+  let outlineLevel = 0;
+  let outlined: THREE.Object3D | null = null;
   let pointerId: number | null = null;
   let awaitingNext = false;
   let bounds: Aabb = { minX: -1, minY: -1, maxX: 1, maxY: 1 };
@@ -80,6 +86,10 @@ export function mountPlay(options: {
   });
 
   let last = performance.now();
+  const fpsEl = document.getElementById('hud-fps');
+  let fpsWindow = 0;
+  let fpsFrames = 0;
+  let fpsShown = -1;
 
   function designToWorld(dx: number, dy: number): { x: number; y: number } {
     return worldFromDesign(dx, dy, camera.position.x, camera.position.y, camera.zoom);
@@ -108,6 +118,7 @@ export function mountPlay(options: {
     buckleViews = [];
     fallers = [];
     fallerFront = FALL_FRONT;
+    feedback.clear();
     nutDrag = null;
     screwDrag = null;
   }
@@ -207,7 +218,6 @@ export function mountPlay(options: {
   function finishLoose(cancel: boolean): void {
     const drag = screwDrag;
     screwDrag = null;
-    screwStopped = false;
     if (!drag) return;
     const screw = board.screws.find((item) => item.id === drag.id);
     if (!screw) return;
@@ -228,14 +238,26 @@ export function mountPlay(options: {
     const dragId = screwDrag.id;
     const screw = board.screws.find((item) => item.id === dragId);
     if (!screw) return;
-    const axis = screwSlideAxis(screw);
-    const along = (world.x - screwDrag.x) * axis.x + (world.y - screwDrag.y) * axis.y;
-    screw.x = screwDrag.x0;
-    screw.y = screwDrag.y0;
-    const result = slideScrew(board.screws, board.nuts ?? [], screw.id, axis.x * along, axis.y * along);
-    if (result.blocked && !screwStopped) pulseHaptic('hit');
-    screwStopped = result.blocked;
+    const from = { x: screwDrag.x, y: screwDrag.y };
+    screwDrag.x = world.x;
+    screwDrag.y = world.y;
+    const beforeX = screw.x;
+    const beforeY = screw.y;
+    const result = dragScrew(board.screws, board.nuts ?? [], screw.id, from, world);
+    const moved = Math.hypot(screw.x - beforeX, screw.y - beforeY);
+    const feel = contactFeel(screwDrag.armed, screwDrag.free, moved, result.blocked);
+    screwDrag.armed = feel.armed;
+    screwDrag.free = feel.free;
+    if (feel.fire) {
+      pulseHaptic('hit');
+      const view = screwViews.find((item) => item.id === screw.id);
+      if (view) feedback.impact(view.mesh);
+    }
     placeScrew(screw.id);
+    const loose = !screwHeld(screw, board.nuts ?? []);
+    const buckles = buckleViews.filter((item) => item.screwId === screw.id).map((item) => item.mesh);
+    const mesh = screwViews.find((item) => item.id === screw.id)?.mesh;
+    feedback.hint(loose && mesh ? [mesh, ...buckles] : []);
   }
 
   function moveNut(world: { x: number; y: number }): void {
@@ -246,19 +268,35 @@ export function mountPlay(options: {
     if (!nut || !screw) return;
     const axis = nutAxis(screw, nut);
     const target = nutDrag.t0 + (world.x - nutDrag.x) * axis.x + (world.y - nutDrag.y) * axis.y;
+    const before = nut.t;
     const result = slideNut(board.nuts, board.screws, nut.id, target);
-    if (result.exited) {
-      const view = nutViews.find((item) => item.id === dragId);
-      if (view) dropMesh(view.mesh, nutDepartureSpin(axis));
-      nutDrag = null;
-      nutStopped = false;
-      pulseHaptic('clear');
-      noteClear();
-      return;
+    const moved = Math.abs(nut.t - before);
+    const feel = contactFeel(nutDrag.armed, nutDrag.free, moved, result.blocked);
+    nutDrag.armed = feel.armed;
+    nutDrag.free = feel.free;
+    if (feel.fire) {
+      pulseHaptic('hit');
+      const view = nutViews.find((item) => item.id === nut.id);
+      if (view) feedback.impact(view.mesh);
     }
-    if (result.blocked && !nutStopped) pulseHaptic('hit');
-    nutStopped = result.blocked;
     placeNutMesh(nut.id);
+    const view = nutViews.find((item) => item.id === nut.id);
+    feedback.hint(nutPastTip(screw, nut) && view ? [view.mesh] : []);
+  }
+
+  function releaseNut(): void {
+    const drag = nutDrag;
+    nutDrag = null;
+    if (!drag || !board.nuts) return;
+    const nut = board.nuts.find((item) => item.id === drag.id);
+    const screw = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
+    if (!nut || !screw || !nutPastTip(screw, nut)) return;
+    const axis = nutAxis(screw, nut);
+    const view = nutViews.find((item) => item.id === nut.id);
+    board.nuts = board.nuts.filter((item) => item.id !== nut.id);
+    if (view) dropMesh(view.mesh, nutDepartureSpin(axis));
+    pulseHaptic('clear');
+    noteClear();
   }
 
   function usableRect(): UsableRect {
@@ -298,32 +336,71 @@ export function mountPlay(options: {
     camera.updateProjectionMatrix();
   }
 
+  function beginNut(id: string, t0: number, x: number, y: number): void {
+    nutDrag = { id, t0, x, y, armed: true, free: 0 };
+    pulseHaptic('grab');
+  }
+
+  function beginScrew(id: string, x: number, y: number, at: { x: number; y: number }): void {
+    screwDrag = { id, x0: at.x, y0: at.y, x, y, armed: true, free: 0 };
+    pulseHaptic('grab');
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (pointerId !== null || awaitingNext) return;
     const world = worldFromEvent(event);
     if (!world) return;
     const nut = nutAt(board.nuts ?? [], board.screws, world.x, world.y);
+    const screw = screwAt(board.screws, board.nuts ?? [], world.x, world.y);
+    if (nut && screw) {
+      const host = board.screws.find((item) => item.id === nut.screwId) ?? screw;
+      if (!axesParallel(nutAxis(host, nut), screwSlideAxis(screw))) {
+        pointerId = event.pointerId;
+        canvas.setPointerCapture(event.pointerId);
+        pending = { x: world.x, y: world.y, nutId: nut.id, screwId: screw.id };
+        return;
+      }
+    }
     if (nut) {
       pointerId = event.pointerId;
       canvas.setPointerCapture(event.pointerId);
-      nutDrag = { id: nut.id, t0: nut.t, x: world.x, y: world.y };
-      nutStopped = false;
-      pulseHaptic('grab');
+      beginNut(nut.id, nut.t, world.x, world.y);
       return;
     }
-    const screw = screwAt(board.screws, board.nuts ?? [], world.x, world.y);
     if (!screw) return;
     pointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
-    screwDrag = { id: screw.id, x0: screw.x, y0: screw.y, x: world.x, y: world.y };
-    screwStopped = false;
-    pulseHaptic('grab');
+    beginScrew(screw.id, world.x, world.y, screw);
+  }
+
+  function settlePending(world: { x: number; y: number }): void {
+    const press = pending;
+    if (!press) return;
+    const nut = board.nuts?.find((item) => item.id === press.nutId);
+    const screw = board.screws.find((item) => item.id === press.screwId);
+    const host = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
+    if (!nut || !screw || !host) {
+      pending = null;
+      return;
+    }
+    const choice = strokeChoice(
+      nutAxis(host, nut),
+      screwSlideAxis(screw),
+      world.x - press.x,
+      world.y - press.y,
+      intentWorld(INTENT_CLEAR, camera.zoom),
+    );
+    if (!choice) return;
+    pending = null;
+    if (choice === 'nut') beginNut(nut.id, nut.t, world.x, world.y);
+    else beginScrew(screw.id, world.x, world.y, screw);
   }
 
   function onPointerMove(event: PointerEvent): void {
     if (event.pointerId !== pointerId) return;
     const world = worldFromEvent(event);
     if (!world) return;
+    if (pending) settlePending(world);
     if (nutDrag) moveNut(world);
     else if (screwDrag) moveScrew(world);
   }
@@ -332,7 +409,9 @@ export function mountPlay(options: {
     if (event.pointerId !== pointerId) return;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     pointerId = null;
-    nutDrag = null;
+    pending = null;
+    releaseNut();
+    feedback.hint([]);
     finishLoose(false);
     if (awaitingNext) {
       awaitingNext = false;
@@ -346,8 +425,20 @@ export function mountPlay(options: {
   canvas.addEventListener('pointercancel', onPointerUp);
 
   function tick(now: number): void {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const frameDt = (now - last) / 1000;
+    const dt = Math.min(0.05, frameDt);
     last = now;
+    fpsWindow += frameDt;
+    fpsFrames += 1;
+    if (fpsEl && fpsWindow >= 0.25) {
+      const fps = Math.round(fpsFrames / fpsWindow);
+      if (fps !== fpsShown) {
+        fpsShown = fps;
+        fpsEl.textContent = `${fps} FPS`;
+      }
+      fpsWindow = 0;
+      fpsFrames = 0;
+    }
     const view = viewSize();
     let alive = 0;
     for (const faller of fallers) {
@@ -368,7 +459,20 @@ export function mountPlay(options: {
     }
     fallers.length = alive;
     if (alive === 0) fallerFront = FALL_FRONT;
-    renderer.render(scene, camera);
+    feedback.step(dt);
+    const selected = nutDrag
+      ? nutViews.find((item) => item.id === nutDrag?.id)?.mesh ?? null
+      : screwDrag
+        ? screwViews.find((item) => item.id === screwDrag?.id)?.mesh ?? null
+        : null;
+    if (selected !== outlined) {
+      outlined = selected;
+      outlineLevel = 0;
+    }
+    outlineLevel += ((selected ? 1 : 0) - outlineLevel) * Math.min(1, dt * 14);
+    if (!selected && outlineLevel < 0.02) outlined = null;
+    selectionOutline.show(outlined, outlined ? outlineLevel : 0);
+    selectionOutline.render();
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
@@ -381,6 +485,7 @@ export function mountPlay(options: {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
       clearViews();
+      selectionOutline.dispose();
       scene.remove(root);
     },
     replace: (next) => {
