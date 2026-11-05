@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from '../adapt/design';
 import { aimNut, nutMesh, PART, screwMesh } from './parts';
+import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
 import { nutAt, nutAxis, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
 import type { Board } from './board';
 import { pulseHaptic } from './hapticFeel';
@@ -61,7 +62,9 @@ export function mountPlay(options: {
   let nutViews: { id: string; mesh: THREE.Mesh }[] = [];
   let screwViews: { id: string; mesh: THREE.Object3D }[] = [];
   let buckleViews: { screwId: string; mesh: THREE.Object3D }[] = [];
-  let fallers: { mesh: THREE.Object3D; vx: number; vy: number; spin: number }[] = [];
+  let fallers: ({ mesh: THREE.Object3D } & FallMotion)[] = [];
+  const spinAxis = new THREE.Vector3();
+  let fallerFront = FALL_FRONT;
   let nutDrag: { id: string; t0: number; x: number; y: number } | null = null;
   let nutStopped = false;
   let screwDrag: { id: string; x0: number; y0: number; x: number; y: number } | null = null;
@@ -104,6 +107,7 @@ export function mountPlay(options: {
     screwViews = [];
     buckleViews = [];
     fallers = [];
+    fallerFront = FALL_FRONT;
     nutDrag = null;
     screwDrag = null;
   }
@@ -159,10 +163,11 @@ export function mountPlay(options: {
     view.mesh.rotateZ(nutSpin(nut.t));
   }
 
-  function dropMesh(mesh: THREE.Object3D, vx: number, vy: number): void {
+  function dropMesh(mesh: THREE.Object3D, spin: FallSpin | null): void {
     nutViews = nutViews.filter((item) => item.mesh !== mesh);
     screwViews = screwViews.filter((item) => item.mesh !== mesh);
-    fallers.push({ mesh, vx, vy, spin: (Math.random() - 0.5) * 4 });
+    fallerFront = parkInFront(mesh, fallerFront);
+    fallers.push({ mesh, ...(spin ?? stillSpin()), vy: 0 });
   }
 
   function placeScrew(id: string): void {
@@ -179,19 +184,21 @@ export function mountPlay(options: {
     if (board.screws.length === 0 && (board.nuts?.length ?? 0) === 0) awaitingNext = true;
   }
 
-  function dropScrew(id: string, vx: number, vy: number): void {
+  function dropScrew(id: string): void {
+    const screw = board.screws.find((item) => item.id === id);
     const view = screwViews.find((item) => item.id === id);
     const nuts = (board.nuts ?? []).filter((nut) => nut.screwId === id);
-    board.screws = board.screws.filter((screw) => screw.id !== id);
+    const out = screw ? screwSlideAxis(screw) : { x: 1, y: 0 };
+    board.screws = board.screws.filter((item) => item.id !== id);
     board.nuts = (board.nuts ?? []).filter((nut) => nut.screwId !== id);
-    if (view) dropMesh(view.mesh, vx, vy);
+    if (view) dropMesh(view.mesh, null);
     for (const nut of nuts) {
       const nutView = nutViews.find((item) => item.id === nut.id);
-      if (nutView) dropMesh(nutView.mesh, vx, vy);
+      if (nutView) dropMesh(nutView.mesh, nutDepartureSpin(screw ? nutAxis(screw, nut) : out));
     }
     for (const buckle of buckleViews) {
       if (buckle.screwId !== id) continue;
-      dropMesh(buckle.mesh, vx, vy);
+      dropMesh(buckle.mesh, null);
     }
     buckleViews = buckleViews.filter((buckle) => buckle.screwId !== id);
     noteClear();
@@ -212,10 +219,7 @@ export function mountPlay(options: {
       }
       return;
     }
-    const axis = screwSlideAxis(screw);
-    const along = (screw.x - drag.x0) * axis.x + (screw.y - drag.y0) * axis.y;
-    const sign = Math.sign(along) || 1;
-    dropScrew(screw.id, axis.x * sign * 0.8, axis.y * sign * 0.8);
+    dropScrew(screw.id);
     pulseHaptic('clear');
   }
 
@@ -245,7 +249,7 @@ export function mountPlay(options: {
     const result = slideNut(board.nuts, board.screws, nut.id, target);
     if (result.exited) {
       const view = nutViews.find((item) => item.id === dragId);
-      if (view) dropMesh(view.mesh, axis.x * 2.4, axis.y * 2.4);
+      if (view) dropMesh(view.mesh, nutDepartureSpin(axis));
       nutDrag = null;
       nutStopped = false;
       pulseHaptic('clear');
@@ -345,20 +349,16 @@ export function mountPlay(options: {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const view = viewSize();
-    const zoom = Math.max(camera.zoom, 1e-4);
-    const viewBottom = camera.position.y - view.h / 2 / zoom;
-    const viewTop = camera.position.y + view.h / 2 / zoom;
-    const viewLeft = camera.position.x - view.w / 2 / zoom;
-    const viewRight = camera.position.x + view.w / 2 / zoom;
     let alive = 0;
     for (const faller of fallers) {
-      faller.vy += -30 * dt;
-      faller.mesh.position.x += faller.vx * dt;
+      stepFall(faller, dt);
       faller.mesh.position.y += faller.vy * dt;
-      faller.mesh.rotation.z += faller.spin * dt;
-      const x = faller.mesh.position.x;
-      const y = faller.mesh.position.y;
-      if (x < viewLeft - 0.8 || x > viewRight + 0.8 || y < viewBottom - 0.8 || y > viewTop + 0.8) {
+      if (faller.speed !== 0) {
+        spinAxis.set(faller.axisX, faller.axisY, 0);
+        faller.mesh.rotateOnWorldAxis(spinAxis, faller.speed * dt);
+      }
+      const { x, y } = faller.mesh.position;
+      if (fallPastView(x, y, view, { x: camera.position.x, y: camera.position.y, zoom: camera.zoom })) {
         disposeObject(faller.mesh);
         root.remove(faller.mesh);
         continue;
@@ -367,6 +367,7 @@ export function mountPlay(options: {
       alive += 1;
     }
     fallers.length = alive;
+    if (alive === 0) fallerFront = FALL_FRONT;
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }

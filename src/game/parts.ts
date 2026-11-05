@@ -130,7 +130,7 @@ export function silverBuckle(width: number, basis: number, depth: number, length
   const group = new THREE.Group();
   const { sleeveLen, sleeveW, gripSpan, gripStick } = buckleMetrics(width, basis * lengthScale);
   const metal = new THREE.MeshStandardMaterial({ color: BUCKLE_COLOR, metalness: 0.04, roughness: 0.38 });
-  const sleeve = straightBar(sleeveLen, sleeveW, depth * 1.2, metal, SHAFT_RADIUS);
+  const sleeve = straightBar(sleeveLen, sleeveW, depth * 1.2, metal, SHAFT_RADIUS + THREAD_HOLE_GAP);
   sleeve.position.z = 0.03;
   sleeve.castShadow = false;
   sleeve.userData.noShadow = true;
@@ -175,8 +175,10 @@ export const SHAFT_CORE = SCREW.width / 2;
 const THREAD_COIL = 0.72;
 /** Thread tube radius, as a share of the core radius. */
 const THREAD_TUBE = 0.36;
-/** Outermost metal of the rod. Hole, bend, and contact all use this. */
+/** Outermost metal of the rod. Bend and contact use this. The drawn helix is art and does not block. */
 export const SHAFT_RADIUS = SHAFT_CORE * (THREAD_COIL + THREAD_TUBE);
+/** Mesh holes are this much wider than the crest so the decorative thread does not meet the wall. */
+const THREAD_HOLE_GAP = 0.008;
 
 export const NUT_COLORS = [0x3498db, 0x2ecc71, 0xf4d03f, 0xe74c3c] as const;
 
@@ -372,7 +374,7 @@ function headGeometry(depth: number): THREE.ExtrudeGeometry {
   }
   shape.closePath();
   const hole = new THREE.Path();
-  hole.absarc(0, 0, SHAFT_RADIUS, 0, Math.PI * 2, true);
+  hole.absarc(0, 0, SHAFT_RADIUS + THREAD_HOLE_GAP, 0, Math.PI * 2, true);
   shape.holes.push(hole);
   const cap = screwCap(depth);
   const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -399,7 +401,7 @@ function nutGeometry(depth: number): THREE.ExtrudeGeometry {
   }
   shape.closePath();
   const hole = new THREE.Path();
-  hole.absarc(0, 0, SHAFT_RADIUS, 0, Math.PI * 2, true);
+  hole.absarc(0, 0, SHAFT_RADIUS + THREAD_HOLE_GAP, 0, Math.PI * 2, true);
   shape.holes.push(hole);
   const cap = screwCap(depth);
   const geometry = new THREE.ExtrudeGeometry(shape, {

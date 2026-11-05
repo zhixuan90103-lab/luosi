@@ -13,6 +13,11 @@ import { screwLocalBounds } from './parts';
 export const VIEW_H = 10;
 /** Empty design pixels kept around the level, inside the chrome. */
 export const FRAME_MARGIN = 24;
+/**
+ * Share of the usable rect the level is fitted into.
+ * 0.9 is the normal framing: screws read 10% smaller than a tight fit.
+ */
+export const FIT_FILL = 0.9;
 /** How far the fitted level sits above the usable center, when the frame has room. */
 export const FRAME_LIFT = 48;
 
@@ -112,7 +117,7 @@ export function frameFor(bounds: Aabb, usable: UsableRect): Frame {
   const ndc = designNdc(cx, cy);
   const bw = Math.max(bounds.maxX - bounds.minX, 1e-3);
   const bh = Math.max(bounds.maxY - bounds.minY, 1e-3);
-  const minZoom = Math.min(worldW / bw, worldH / bh);
+  const minZoom = Math.min(worldW / bw, worldH / bh) * FIT_FILL;
   return { minZoom, maxZoom: minZoom, nx: ndc.x, ny: ndc.y, worldW, worldH };
 }
 
