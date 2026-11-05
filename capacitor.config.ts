@@ -6,8 +6,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * - base './' on Vite → relative assets for offline WebView
  */
 const config: CapacitorConfig = {
-  appId: 'com.wangzhixuan.rings',
-  appName: 'Rings',
+  appId: 'com.wangzhixuan.luosi',
+  appName: '螺丝',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

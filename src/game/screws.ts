@@ -11,6 +11,7 @@ import {
   headSilhouette,
   nutSilhouette,
   screwLayout,
+  screwSpans,
   type ScrewKind,
   type ScrewLayout,
   type ScrewRun,
@@ -156,53 +157,23 @@ function pushArc(out: Circle[], screw: ScrewBody, cx: number, cy: number, a0: nu
 /** Shaft and elbow centerlines. The head, nuts, and buckles are slabs, not fat circles. */
 function tubeCircles(screw: ScrewBody): Circle[] {
   const out: Circle[] = [];
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
-  if (screw.kind === 'straight') {
-    pushSegment(out, screw, 0, 0, SCREW.straight, 0);
-  } else if (screw.kind === 'l') {
-    pushSegment(out, screw, 0, -r, r + leg, -r);
-    pushSegment(out, screw, -r, 0, -r, leg);
-    pushArc(out, screw, 0, 0, -Math.PI / 2, -Math.PI);
-  } else {
-    const pitch = SCREW.span + r * 2;
-    pushSegment(out, screw, 0, 0, 0, leg);
-    pushSegment(out, screw, r, -r, r + SCREW.span, -r);
-    pushSegment(out, screw, pitch, 0, pitch, leg);
-    pushArc(out, screw, r, 0, Math.PI, Math.PI * 1.5);
-    pushArc(out, screw, r + SCREW.span, 0, -Math.PI / 2, 0);
+  for (const span of screwSpans(screw.kind)) {
+    if (span.kind === 'line') pushSegment(out, screw, span.x0, span.y0, span.x1, span.y1);
+    else pushArc(out, screw, span.cx, span.cy, span.a0, span.a1);
   }
   return out;
 }
 
-/** Straight runs only. The barrel is this capsule; metal past it is the bend. */
+/** Straight runs in world space. The barrel is this capsule; metal past it is the bend. */
 function straightEnds(screw: ScrewBody): { x0: number; y0: number; x1: number; y1: number }[] {
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
-  if (screw.kind === 'straight') {
-    const a = toWorld(screw, 0, 0);
-    const b = toWorld(screw, SCREW.straight, 0);
-    return [{ x0: a.x, y0: a.y, x1: b.x, y1: b.y }];
+  const lines: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  for (const span of screwSpans(screw.kind)) {
+    if (span.kind !== 'line') continue;
+    const a = toWorld(screw, span.x0, span.y0);
+    const b = toWorld(screw, span.x1, span.y1);
+    lines.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y });
   }
-  if (screw.kind === 'l') {
-    const a = toWorld(screw, 0, -r);
-    const b = toWorld(screw, r + leg, -r);
-    const c = toWorld(screw, -r, 0);
-    const d = toWorld(screw, -r, leg);
-    return [
-      { x0: a.x, y0: a.y, x1: b.x, y1: b.y },
-      { x0: c.x, y0: c.y, x1: d.x, y1: d.y },
-    ];
-  }
-  const pitch = SCREW.span + r * 2;
-  const left0 = toWorld(screw, 0, 0);
-  const left1 = toWorld(screw, 0, leg);
-  const right0 = toWorld(screw, pitch, 0);
-  const right1 = toWorld(screw, pitch, leg);
-  return [
-    { x0: left0.x, y0: left0.y, x1: left1.x, y1: left1.y },
-    { x0: right0.x, y0: right0.y, x1: right1.x, y1: right1.y },
-  ];
+  return lines;
 }
 
 function inBarrel(screw: ScrewBody, x: number, y: number): boolean {
@@ -237,13 +208,9 @@ function bendHitsRect(screw: ScrewBody, circle: Circle, rect: Rect): boolean {
 }
 
 function elbowCircles(screw: ScrewBody): Circle[] {
-  if (screw.kind === 'straight') return [];
   const out: Circle[] = [];
-  const r = SCREW.bend;
-  if (screw.kind === 'l') pushArc(out, screw, 0, 0, -Math.PI / 2, -Math.PI);
-  else {
-    pushArc(out, screw, r, 0, Math.PI, Math.PI * 1.5);
-    pushArc(out, screw, r + SCREW.span, 0, -Math.PI / 2, 0);
+  for (const span of screwSpans(screw.kind)) {
+    if (span.kind === 'arc') pushArc(out, screw, span.cx, span.cy, span.a0, span.a1);
   }
   return out;
 }
@@ -578,17 +545,7 @@ export function pinLocks(screw: ScrewBody): void {
 }
 
 function shaftSegments(screw: ScrewBody): { ax: number; ay: number; bx: number; by: number }[] {
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
-  const line = (x0: number, y0: number, x1: number, y1: number) => {
-    const a = toWorld(screw, x0, y0);
-    const b = toWorld(screw, x1, y1);
-    return { ax: a.x, ay: a.y, bx: b.x, by: b.y };
-  };
-  if (screw.kind === 'straight') return [line(0, 0, SCREW.straight, 0)];
-  if (screw.kind === 'l') return [line(0, -r, r + leg, -r), line(-r, 0, -r, leg)];
-  const pitch = SCREW.span + r * 2;
-  return [line(0, 0, 0, leg), line(r, -r, r + SCREW.span, -r), line(pitch, 0, pitch, leg)];
+  return straightEnds(screw).map((seg) => ({ ax: seg.x0, ay: seg.y0, bx: seg.x1, by: seg.y1 }));
 }
 
 /** True while any of this screw's sleeves still contains its rod, head, bend, or a nut. */
@@ -629,15 +586,11 @@ function headSlab(screw: ScrewBody): Slab {
 type Arc = { cx: number; cy: number; a0: number; a1: number };
 
 function bendArcs(kind: ScrewKind): Arc[] {
-  const r = SCREW.bend;
-  if (kind === 'l') return [{ cx: 0, cy: 0, a0: -Math.PI / 2, a1: -Math.PI }];
-  if (kind === 'u') {
-    return [
-      { cx: r, cy: 0, a0: Math.PI, a1: Math.PI * 1.5 },
-      { cx: r + SCREW.span, cy: 0, a0: -Math.PI / 2, a1: 0 },
-    ];
+  const arcs: Arc[] = [];
+  for (const span of screwSpans(kind)) {
+    if (span.kind === 'arc') arcs.push({ cx: span.cx, cy: span.cy, a0: span.a0, a1: span.a1 });
   }
-  return [];
+  return arcs;
 }
 
 function angleOnArc(angle: number, arc: Arc): boolean {

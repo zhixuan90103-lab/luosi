@@ -219,10 +219,39 @@ function dedupe(samples: ScrewSample[]): ScrewSample[] {
   return out;
 }
 
+/** One span of a screw. Lines are the barrel. Arcs are the bends. */
+export type ScrewSpan =
+  | { kind: 'line'; x0: number; y0: number; x1: number; y1: number }
+  | { kind: 'arc'; cx: number; cy: number; a0: number; a1: number };
+
+/** Local centerline. Mesh, contact, and picking all read this. */
+export function screwSpans(kind: ScrewKind): ScrewSpan[] {
+  const r = SCREW.bend;
+  const leg = SCREW.leg;
+  if (kind === 'straight') return [{ kind: 'line', x0: 0, y0: 0, x1: SCREW.straight, y1: 0 }];
+  if (kind === 'l') {
+    return [
+      { kind: 'line', x0: r + leg, y0: -r, x1: 0, y1: -r },
+      { kind: 'arc', cx: 0, cy: 0, a0: -Math.PI / 2, a1: -Math.PI },
+      { kind: 'line', x0: -r, y0: 0, x1: -r, y1: leg },
+    ];
+  }
+  const span = SCREW.span;
+  return [
+    { kind: 'line', x0: 0, y0: leg, x1: 0, y1: 0 },
+    { kind: 'arc', cx: r, cy: 0, a0: Math.PI, a1: Math.PI * 1.5 },
+    { kind: 'line', x0: r, y0: -r, x1: r + span, y1: -r },
+    { kind: 'arc', cx: r + span, cy: 0, a0: -Math.PI / 2, a1: 0 },
+    { kind: 'line', x0: span + r * 2, y0: 0, x1: span + r * 2, y1: leg },
+  ];
+}
+
 /** +X shaft from the head center to the open tip. */
 function straightCenter(): ScrewSample[] {
   const samples: ScrewSample[] = [];
-  pushLine(samples, 0, 0, SCREW.straight, 0, 8);
+  for (const span of screwSpans('straight')) {
+    if (span.kind === 'line') pushLine(samples, span.x0, span.y0, span.x1, span.y1, 8);
+  }
   return samples;
 }
 
@@ -230,28 +259,22 @@ function straightCenter(): ScrewSample[] {
  * Elbow in the bottom-left. One open tip runs +X, the other runs +Y.
  * Arc goes the short way from the horizontal leg to the vertical leg.
  */
-function lCenter(): ScrewSample[] {
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
+function spanSamples(kind: ScrewKind): ScrewSample[] {
   const samples: ScrewSample[] = [];
-  pushLine(samples, r + leg, -r, 0, -r, 8);
-  pushArc(samples, 0, 0, r, -Math.PI / 2, -Math.PI, 16);
-  pushLine(samples, -r, 0, -r, leg, 8);
+  for (const span of screwSpans(kind)) {
+    if (span.kind === 'line') pushLine(samples, span.x0, span.y0, span.x1, span.y1, 8);
+    else pushArc(samples, span.cx, span.cy, SCREW.bend, span.a0, span.a1, 16);
+  }
   return dedupe(samples);
+}
+
+function lCenter(): ScrewSample[] {
+  return spanSamples('l');
 }
 
 /** Both open tips point +Y. The two elbows are the base. */
 function uCenter(): ScrewSample[] {
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
-  const span = SCREW.span;
-  const samples: ScrewSample[] = [];
-  pushLine(samples, 0, leg, 0, 0, 8);
-  pushArc(samples, r, 0, r, Math.PI, Math.PI * 1.5, 16);
-  pushLine(samples, r, -r, r + span, -r, 6);
-  pushArc(samples, r + span, 0, r, -Math.PI / 2, 0, 16);
-  pushLine(samples, span + r * 2, 0, span + r * 2, leg, 8);
-  return dedupe(samples);
+  return spanSamples('u');
 }
 
 function centerOf(kind: ScrewKind): ScrewSample[] {

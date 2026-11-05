@@ -25,8 +25,8 @@
 | 构建 | `vite.config.ts`（**`base: './'`**） |
 | iOS 注入 | `scripts/bootstrap-ios.mjs` |
 | 音效方案（未实现） | `docs/AUDIO.md` |
-| 画面零件 | `src/game/parts.ts`，规范见 `docs/PARTS.md` |
-| 当前操作 | `play.ts` 收指针并每帧绘制。`screws.ts` 算扣和螺丝的滑动。按下、撞上、解开各震一次。松手后盘上没有螺丝和扣，`main.ts` 弹出 `#result` |
+| 画面零件 | `src/game/parts.ts`。中心线 `screwSpans`。规范见 `docs/PARTS.md` |
+| 当前操作 | `play.ts` 收指针并每帧绘制。`screws.ts` 算点选、滑动和阻挡。按下、撞上、解开各震一次。松手后盘上没有螺丝和扣，`main.ts` 弹出 `#result` |
 | 手机设置 | `src/game/phoneSettings.ts`。试玩页右上角齿轮只开震动测试和四档手感 |
 | 规则 | `docs/SCREWS.md`。试玩读 `public/levels/` |
 
@@ -67,8 +67,8 @@ npm run ios
 
 ## 业务怎么加
 
-- 外形：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
-- 拖动和阻挡：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡公式  
+- 外形和中心线：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
+- 拖动、阻挡和点选：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡公式。直段和弯只从 `screwSpans` 读  
 - 关卡：`public/levels/`。读档在 `src/game/levelio.ts`。没有扣的数据时按 `screwLayout` 生成
 - 保留：adapt / create-renderer / haptics / plugins / `base`  
 - 触控：`clientToDesign` + 忽略 letterbox 外  
