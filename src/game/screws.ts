@@ -295,6 +295,19 @@ function poseBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[]): bo
   return hitsOwnBuckle(screw, nuts) || hitsForeign(screw, nuts, screws);
 }
 
+/** A nut slab against its own buckle and every other screw. The straight rod is not a nut. */
+function nutBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[], nut: NutBody): boolean {
+  const slab = capSlab(nutWorld(screw, nut), nutAxis(screw, nut), NUT_ACROSS);
+  if (buckleRects(screw).some((rect) => slabHitsRect(slab, rect))) return true;
+  for (const other of screws) {
+    if (other.id === screw.id) continue;
+    if (tubeCircles(other).some((tube) => circleHitsSlab(tube, slab))) return true;
+    if (capSlabs(other, nuts).some((otherSlab) => slabHitsRect(slab, { ...otherSlab, hole: false }))) return true;
+    if (buckleRects(other).some((rect) => slabHitsRect(slab, rect))) return true;
+  }
+  return false;
+}
+
 /**
  * Slide one nut along its run. Both ways follow the finger.
  * The open tip drops the nut. The dead end, a neighbour nut, or another screw stops it.
@@ -328,46 +341,12 @@ export function slideNut(
   for (let i = 1; i <= steps; i += 1) {
     const t = from + ((wanted - from) * i) / steps;
     const probe = { ...nut, t };
-    const at = nutWorld(screw, probe);
-    const slab = capSlab(at, nutAxis(screw, probe), NUT_ACROSS);
-    const ownBuckle = buckleRects(screw).some((rect) => slabHitsRect(slab, rect));
-    let foreign = false;
-    if (!ownBuckle) {
-      for (const other of screws) {
-        if (other.id === screw.id) continue;
-        if (tubeCircles(other).some((tube) => circleHitsSlab(tube, slab))) {
-          foreign = true;
-          break;
-        }
-        if (capSlabs(other, nuts).some((otherSlab) => slabHitsRect(slab, { ...otherSlab, hole: false }))) {
-          foreign = true;
-          break;
-        }
-        if (buckleRects(other).some((rect) => slabHitsRect(slab, rect))) {
-          foreign = true;
-          break;
-        }
-      }
-    }
-    if (ownBuckle || foreign) {
+    if (nutBlocked(screw, nuts, screws, probe)) {
       let loT = safe;
       let hiT = t;
       for (let n = 0; n < 10; n += 1) {
         const mid = (loT + hiT) / 2;
-        const midNut = { ...nut, t: mid };
-        const midAt = nutWorld(screw, midNut);
-        const midSlab = capSlab(midAt, nutAxis(screw, midNut), NUT_ACROSS);
-        const hit =
-          buckleRects(screw).some((rect) => slabHitsRect(midSlab, rect)) ||
-          screws.some((other) => {
-            if (other.id === screw.id) return false;
-            return (
-              tubeCircles(other).some((tube) => circleHitsSlab(tube, midSlab)) ||
-              capSlabs(other, nuts).some((otherSlab) => slabHitsRect(midSlab, { ...otherSlab, hole: false })) ||
-              buckleRects(other).some((rect) => slabHitsRect(midSlab, rect))
-            );
-          });
-        if (hit) hiT = mid;
+        if (nutBlocked(screw, nuts, screws, { ...nut, t: mid })) hiT = mid;
         else loT = mid;
       }
       safe = loT;

@@ -8,7 +8,7 @@
 
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../adapt/design';
 import type { Board } from './board';
-import { buckleMetrics, connectorPoints, PART, screwLocalBounds } from './parts';
+import { screwLocalBounds } from './parts';
 
 export const VIEW_H = 10;
 /** Empty design pixels kept around the level, inside the chrome. */
@@ -87,45 +87,7 @@ export function boardBounds(board: Board): Aabb {
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
   };
-  for (const ring of board.rings) {
-    add(ring.x - ring.outer, ring.y - ring.outer);
-    add(ring.x + ring.outer, ring.y + ring.outer);
-    const band = ring.outer * PART.bandRatio;
-    for (const connector of ring.connectors) {
-      const angle = ring.theta + connector.angle;
-      const c = Math.cos(angle);
-      const s = Math.sin(angle);
-      for (const point of connectorPoints(ring.outer, band, connector.stem)) {
-        add(ring.x + c * point.x - s * point.y, ring.y + s * point.x + c * point.y);
-      }
-    }
-  }
-  const basis = PART.outer * 2 * PART.scale;
-  for (const bar of board.bars) {
-    const dx = bar.x1 - bar.x0;
-    const dy = bar.y1 - bar.y0;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len;
-    const uy = dy / len;
-    const px = -uy;
-    const py = ux;
-    for (const [cx, cy] of [[bar.x0, bar.y0], [bar.x1, bar.y1]] as const) {
-      for (const along of [-bar.grip, bar.grip]) {
-        for (const side of [-bar.half, bar.half]) {
-          add(cx + ux * along + px * side, cy + uy * along + py * side);
-        }
-      }
-    }
-    const latch = board.latches.find((item) => item.barId === bar.id && item.release === 'sleeve');
-    if (!latch) continue;
-    const { sleeveLen, sleeveW } = buckleMetrics(bar.half * 2, basis);
-    for (const along of [-sleeveLen / 2, sleeveLen / 2]) {
-      for (const side of [-sleeveW / 2, sleeveW / 2]) {
-        add(latch.x + ux * along + px * side, latch.y + uy * along + py * side);
-      }
-    }
-  }
-  for (const screw of board.screws ?? []) {
+  for (const screw of board.screws) {
     const local = screwLocalBounds(screw.kind);
     const c = Math.cos(screw.theta);
     const s = Math.sin(screw.theta);
@@ -154,22 +116,6 @@ export function frameFor(bounds: Aabb, usable: UsableRect): Frame {
   return { minZoom, maxZoom: minZoom, nx: ndc.x, ny: ndc.y, worldW, worldH };
 }
 
-/** Largest ring radius on the board. Screen size is this times zoom. */
-export function largestRing(board: Board): number {
-  let outer = 0;
-  for (const ring of board.rings) outer = Math.max(outer, ring.outer);
-  return outer;
-}
-
-/**
- * Zoom where this level's largest ring matches the reference ring's size
- * at the reference fit zoom. Never below the level's own fit zoom.
- */
-export function zoomCap(outer: number, minZoom: number, referenceOuter: number, referenceZoom: number): number {
-  if (outer <= 0 || referenceOuter <= 0) return minZoom;
-  return Math.max(minZoom, referenceZoom * (referenceOuter / outer));
-}
-
 /** World distance the fit may raise the level. Never enough to leave the usable rect. */
 export function frameLift(bounds: Aabb, frame: Frame, zoom: number): number {
   const room = frame.worldH / 2 / zoom - (bounds.maxY - bounds.minY) / 2;
@@ -188,178 +134,4 @@ export function cameraForFit(bounds: Aabb, frame: Frame): { x: number; y: number
     y: (bounds.minY + bounds.maxY) / 2 - oy - frameLift(bounds, frame, zoom),
     zoom,
   };
-}
-
-/** How fast the shown camera closes on the gesture target. Higher is snappier. */
-export const CAMERA_APPROACH = 18;
-
-/** Design pixels of midpoint or span change before a two-finger gesture moves the camera. */
-export const PINCH_LOCK_PX = 30;
-
-/** Move the shown camera part of the way to the target. A short sample does not arrive in one step. */
-export function approachCamera(
-  current: { x: number; y: number; zoom: number },
-  goal: { x: number; y: number; zoom: number },
-  dt: number,
-  rate = CAMERA_APPROACH,
-): { x: number; y: number; zoom: number } {
-  const t = dt <= 0 ? 0 : 1 - Math.exp(-rate * dt);
-  return {
-    x: current.x + (goal.x - current.x) * t,
-    y: current.y + (goal.y - current.y) * t,
-    zoom: current.zoom + (goal.zoom - current.zoom) * t,
-  };
-}
-
-export type PinchLock = 'zoom' | 'pan';
-
-/** The first action to pass the lock distance wins for the rest of the gesture. */
-export function choosePinchLock(
-  midShift: number,
-  distShift: number,
-  previous: PinchLock | null,
-  lockPx = PINCH_LOCK_PX,
-): PinchLock | null {
-  if (previous) return previous;
-  if (midShift < lockPx && distShift < lockPx) return null;
-  return distShift >= midShift ? 'zoom' : 'pan';
-}
-
-export type TwoFinger = {
-  zoom: number;
-  dist: number;
-  x: number;
-  y: number;
-  midX: number;
-  midY: number;
-  /** Set for the rest of the gesture once one action passes the dead zone. */
-  lock: PinchLock | null;
-  /** A settled lock stays until release. An unsettled one can change on the next sample. */
-  settled: boolean;
-};
-
-export function beginTwoFinger(
-  camX: number,
-  camY: number,
-  zoom: number,
-  midX: number,
-  midY: number,
-  dist: number,
-): TwoFinger {
-  return { zoom, dist, x: camX, y: camY, midX, midY, lock: null, settled: false };
-}
-
-/**
- * Until the midpoint or the finger span moves `lockPx` design pixels, the camera stays.
- * The larger change locks the gesture: zoom only scales, pan only slides.
- * The crossing sample counts for the action that won. A settled lock ignores the other action until release.
- * Pass confirm false while one finger has not reported a move yet, so a one-finger sample cannot stick.
- * Zoom keeps the world point under the current midpoint. Pan keeps the press midpoint's world point under the current midpoint.
- * Returns null until the dead zone is passed. Clamp does not change zoom.
- */
-export function stepTwoFinger(
-  gesture: TwoFinger,
-  midX: number,
-  midY: number,
-  dist: number,
-  camX: number,
-  camY: number,
-  camZoom: number,
-  bounds: Aabb,
-  frame: Frame,
-  lockPx = PINCH_LOCK_PX,
-  confirm = true,
-): { gesture: TwoFinger; camera: { x: number; y: number; zoom: number } | null } {
-  const midShift = Math.hypot(midX - gesture.midX, midY - gesture.midY);
-  const distShift = Math.abs(dist - gesture.dist);
-  const lock = choosePinchLock(midShift, distShift, gesture.settled ? gesture.lock : null, lockPx);
-  const settled = gesture.settled || (confirm && lock !== null);
-  if (!lock || dist < 1e-3) return { gesture: { ...gesture, lock, settled }, camera: null };
-  if (lock === 'zoom') {
-    const zoom = Math.min(frame.maxZoom, Math.max(frame.minZoom, gesture.zoom * (dist / gesture.dist)));
-    const shifted = cameraForPinch({ x: camX, y: camY, zoom: camZoom, midX, midY }, midX, midY, zoom);
-    return { gesture: { ...gesture, lock, settled }, camera: clampCamera(shifted.x, shifted.y, zoom, bounds, frame) };
-  }
-  const shifted = cameraForPinch(gesture, midX, midY, gesture.zoom);
-  return { gesture: { ...gesture, lock, settled }, camera: clampCamera(shifted.x, shifted.y, gesture.zoom, bounds, frame) };
-}
-
-/** Editor slider runs this many times farther than the fit, and the same times closer. */
-export const EDITOR_ZOOM = 4;
-
-/** `t` is 0 four times farther than the fit, 0.5 at the fit, and 1 four times closer. */
-export function editorZoom(far: number, t: number): number {
-  const u = Math.min(1, Math.max(0, t));
-  return far * Math.pow(EDITOR_ZOOM, u * 2 - 1);
-}
-
-export function editorZoomT(far: number, zoom: number): number {
-  if (far <= 1e-4 || zoom <= 1e-4) return 0.5;
-  const t = (Math.log(zoom / far) / Math.log(EDITOR_ZOOM) + 1) / 2;
-  return Math.min(1, Math.max(0, t));
-}
-
-/** `t` is 0 one view below the fit, 0.5 at the fit, and 1 one view above. */
-export function editorPan(viewH: number, t: number): number {
-  const u = Math.min(1, Math.max(0, t));
-  return (u - 0.5) * 2 * viewH;
-}
-
-export function editorPanT(viewH: number, offset: number): number {
-  if (viewH <= 1e-4) return 0.5;
-  return Math.min(1, Math.max(0, offset / (2 * viewH) + 0.5));
-}
-
-/** Editor framing. X stays on the fit. Y shifts by the vertical slider. Zoom is the lens slider. */
-export function editorFrame(
-  fit: { x: number; y: number },
-  zoom: number,
-  panT: number,
-  viewH: number,
-): { x: number; y: number; zoom: number } {
-  const z = Math.max(zoom, 1e-4);
-  return { x: fit.x, y: fit.y + editorPan(viewH / z, panT), zoom: z };
-}
-
-/** Puts the world point that was under the first midpoint under the current midpoint. */
-export function cameraForPinch(
-  start: { x: number; y: number; zoom: number; midX: number; midY: number },
-  midX: number,
-  midY: number,
-  zoom: number,
-): { x: number; y: number } {
-  const world = worldFromDesign(start.midX, start.midY, start.x, start.y, start.zoom);
-  const ndc = designNdc(midX, midY);
-  const { w, h } = viewSize();
-  const z = Math.max(zoom, 1e-4);
-  return {
-    x: world.x - (ndc.x * (w / 2)) / z,
-    y: world.y - (ndc.y * (h / 2)) / z,
-  };
-}
-
-/**
- * Pulls the usable window back inside the level, or the level back inside the
- * window when the level is smaller. Zoom is already final and is not changed.
- */
-export function clampCamera(
-  camX: number,
-  camY: number,
-  zoom: number,
-  bounds: Aabb,
-  frame: Frame,
-): { x: number; y: number; zoom: number } {
-  const { w, h } = viewSize();
-  const z = Math.max(zoom, 1e-4);
-  const halfW = frame.worldW / 2 / z;
-  const halfH = frame.worldH / 2 / z;
-  const ox = (frame.nx * (w / 2)) / z;
-  const oy = (frame.ny * (h / 2)) / z;
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cy = (bounds.minY + bounds.maxY) / 2;
-  const roomX = Math.abs(halfW - (bounds.maxX - bounds.minX) / 2);
-  const roomY = Math.abs(halfH - (bounds.maxY - bounds.minY) / 2);
-  const ux = Math.min(cx + roomX, Math.max(cx - roomX, camX + ox));
-  const uy = Math.min(cy + roomY, Math.max(cy - roomY, camY + oy));
-  return { x: ux - ox, y: uy - oy, zoom };
 }

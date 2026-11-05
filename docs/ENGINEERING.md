@@ -1,10 +1,10 @@
 # Engineering — portrait-webgpu-base
 
-配套：[AGENTS.md](../AGENTS.md) · [ENTRYPOINTS.md](./ENTRYPOINTS.md) · [MERGE.md](./MERGE.md) · [AUDIO.md](./AUDIO.md) · [HAPTICS.md](./HAPTICS.md) · [ROTATE-RINGS.md](./ROTATE-RINGS.md) · [PARTS.md](./PARTS.md) · [ROTATE-RINGS-SOURCES.md](./ROTATE-RINGS-SOURCES.md)
+配套：[AGENTS.md](../AGENTS.md) · [ENTRYPOINTS.md](./ENTRYPOINTS.md) · [MERGE.md](./MERGE.md) · [AUDIO.md](./AUDIO.md) · [HAPTICS.md](./HAPTICS.md) · [SCREWS.md](./SCREWS.md) · [PARTS.md](./PARTS.md)
 
 ## 1. 定位
 
-可复制的 **竖屏 WebGPU 手游底座**：能 dev、能 build、能真机、能震动、桌面≈手机/Pad。打开后试玩 `public/levels/1.json`：环可转，杆可滑，银卡扣锁定。最后一件离场约 1 秒后弹出结算，重玩或下一关，最后一关回到第 1 关。编辑是电脑页 `editor.html`，试玩页和真机没有编辑菜单。保存只写当前摆法。对齐按钮才把左右两列收到同一条横坐标，已有目标的柄心再对准，不把环心拽去凑柄。外形见 [PARTS.md](./PARTS.md)，规则、跟手、结算和编辑见 [ROTATE-RINGS.md](./ROTATE-RINGS.md)。
+可复制的 **竖屏 WebGPU 手游底座**：能 dev、能 build、能真机、能震动、桌面≈手机/Pad。打开后试玩 `public/levels/1.json`：拖螺丝扣，拖螺丝穿过银卡扣。全部离场后弹出结算。外形见 [PARTS.md](./PARTS.md)，拖动见 [SCREWS.md](./SCREWS.md)。
 
 ## 2. 目录
 
@@ -18,7 +18,7 @@ portrait-webgpu-base/
 ├── capacitor.config.ts     # contentInset never · scrollEnabled false
 ├── src/
 │   ├── main.ts             # 舞台、灯光、阴影
-│   ├── game/               # 零件、关卡、编辑、跟手、掉落。规则见 ROTATE-RINGS.md
+│   ├── game/               # 螺丝零件、关卡、拖动。规则见 SCREWS.md
 │   ├── create-renderer.ts
 │   ├── style.css
 │   ├── adapt/
@@ -72,7 +72,7 @@ offset = 居中
 renderer.setSize(390, 844)          // 始终设计分辨率
 ```
 
-触控：画布矩形换到设计坐标，再换到正交视口。按下忽略设计画面外。拖动中指针捕获继续跟踪，滑出画面不丢。点选、短窗口和套筒补齐见 [ROTATE-RINGS.md](./ROTATE-RINGS.md) §4「意图」，跟手公式在同一节。
+触控：画布矩形换到设计坐标，再换到正交视口。按下忽略设计画面外。拖动中指针捕获继续跟踪，滑出画面不丢。螺丝和螺丝扣的拖动见 [SCREWS.md](./SCREWS.md)。
 
 ## 5. Safe Area
 
@@ -127,7 +127,7 @@ SceneDelegate.rootViewController = BridgeViewController()
 只改 storyboard **不够**：Capacitor 8 用 SceneDelegate 直接 `CAPBridgeViewController()`，会绕过 storyboard，HUD 出现 `plugin: false`，按钮无震。
 
 Swift **没有** `prepare`；引擎在 `load()` 启动。UIKit 反馈在主线程触发。验收用 HUD **点我震动**（`impact`）和状态行 `plugin: true`。  
-试玩四种震写在 `src/game/play.ts`：按下碰到零件、带动后再撞、提示亮开始变亮、抬手解开。时机见 [ROTATE-RINGS.md](./ROTATE-RINGS.md) §4。短震播放器的复用在 `plugins/native-haptics/`，改完要 `ios:bootstrap`。
+试玩的震写在 `src/game/play.ts`：按下、撞上、解开。短震播放器的复用在 `plugins/native-haptics/`，改完要 `ios:bootstrap`。
 
 ## 7b. Audio（尚未实现）
 

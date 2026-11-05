@@ -1,5 +1,5 @@
 /**
- * Tunable play haptics. Four events in ROTATE-RINGS §4:
+ * Tunable play haptics. Grab, hit, and clear.
  * lock a piece, a collision after it has moved, the ready-to-clear glow
  * starting to brighten, and a release that clears.
  * The gear panel writes these. Play reads them at the moment it fires.

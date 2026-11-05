@@ -10,9 +10,9 @@
 | [docs/MERGE.md](./docs/MERGE.md) | 双工程优点对照与合并说明 |
 | [docs/AUDIO.md](./docs/AUDIO.md) | 音效方案（预解码 + 每帧一批 + 原生池） |
 | [docs/HAPTICS.md](./docs/HAPTICS.md) | 震动如何一次接对（插件注册 + 玩法层） |
-| [docs/ROTATE-RINGS.md](./docs/ROTATE-RINGS.md) | Rotate Rings 方法规范（区间约束、画面对应、拆解顺序、解开后掉落） |
+| [docs/SCREWS.md](./docs/SCREWS.md) | 螺丝扣拖动和卡扣阻挡 |
 | [docs/PARTS.md](./docs/PARTS.md) | 当前画面的基础件、组合，以及转环、滑杆、锁定卡扣 |
-| [docs/ROTATE-RINGS-SOURCES.md](./docs/ROTATE-RINGS-SOURCES.md) | 上述规范的有效来源 |
+| [docs/PARTS.md](./docs/PARTS.md) | 直、L、U 螺丝和银卡扣的尺寸 |
 
 ## 30 秒上手
 
@@ -23,7 +23,7 @@ npm run dev
 # → http://127.0.0.1:5190/
 ```
 
-应看到：桌面手机框、右上角 **手机/Pad** 切换，以及 `public/levels/1.json`。按住环，它绕自己的中心转：环带上跟手指转过的角度，孔内按环带半径折算，圆心上、下方的上下滑按左右侧跟着走。按住杆，它沿长边跟着走，银卡扣留在原地。被挡住就停，松手不追手指。全部离场约 1 秒后弹出「恭喜过关」。画面右上角齿轮只测震动。宽屏左下角「编辑关卡」进入 `editor.html`。桌面无原生马达，属正常。手写参考关仍在 `src/game/levels.ts`，不直接铺到这个画面上。改完关卡后要重新 `npm run build` 再 `npm run cap:sync`，手机包才会带上新关卡。
+应看到：桌面手机框、右上角 **手机/Pad** 切换，以及 `public/levels/1.json` 里的直、L、U 螺丝。按住螺丝扣沿杆拖，按住螺丝沿卡扣拖。全部离场后弹出「恭喜过关」。画面右上角齿轮只测震动。桌面无原生马达，属正常。改完关卡后要重新 `npm run build` 再 `npm run cap:sync`，手机包才会带上新关卡。
 
 ## 合并了什么
 

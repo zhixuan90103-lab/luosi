@@ -103,7 +103,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve('index.html'),
-        editor: path.resolve('editor.html'),
       },
     },
   },

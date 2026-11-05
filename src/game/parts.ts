@@ -1,7 +1,6 @@
 /**
- * Standalone flat pieces and the two combinations that use them.
- * A ring connector (stem + clasp) can be attached at any outer angle, more than once.
- * A bar buckle belongs only on a capsule bar.
+ * Screw shafts, octagon heads, nuts, and the silver buckle.
+ * Sleeve sizes live in `buckleMetrics`. The mesh and the contact test both read them.
  */
 
 import * as THREE from 'three';
@@ -29,79 +28,6 @@ export const SCREW_CAP_HALF = screwCap(PART.depth * PART.scale).half;
 
 const BUCKLE_COLOR = 0xc8c7c5;
 
-/** Stem and clasp sizes in the same units as `outer` and `band`. No mesh. */
-export function connectorMetrics(outer: number, band: number): {
-  stemLen: number;
-  stemW: number;
-  claspLen: number;
-  claspW: number;
-  stemDist: number;
-  claspDist: number;
-  bend: number;
-} {
-  const stemLen = band * 2.5 * (2 / 3);
-  return connectorLayout(outer, band, stemLen);
-}
-
-/**
- * Same clasp-to-band ratios as `connectorMetrics`.
- * `stemLen` is the straight rod only; the clasp does not stretch with it.
- */
-export function connectorLayout(outer: number, band: number, stemLen: number): {
-  stemLen: number;
-  stemW: number;
-  claspLen: number;
-  claspW: number;
-  stemDist: number;
-  claspDist: number;
-  bend: number;
-} {
-  const stemW = band * 0.88;
-  const claspLen = band * 2.1 * (5 / 6);
-  const claspW = band * 1.4;
-  const stemDist = outer + stemLen * 0.5 - band * 0.2;
-  const claspDist = stemDist + stemLen * 0.5;
-  return { stemLen, stemW, claspLen, claspW, stemDist, claspDist, bend: outer - band / 2 };
-}
-
-/**
- * Farthest point of a connector from the ring center, in the same units as `outer`.
- * The clasp can sit at any angle, so this radius does not depend on `angle`.
- * Clasp samples match `bentClasp`: arc radius `bend`, profile ±claspW/2.
- */
-/** Stem and clasp corners in the connector's local frame. +X runs out from the ring center. */
-export function connectorPoints(outer: number, band: number, stemLen: number): { x: number; y: number }[] {
-  const { stemLen: length, stemW, claspLen, claspW, stemDist, claspDist, bend } = connectorLayout(outer, band, stemLen);
-  const points: { x: number; y: number }[] = [];
-  for (const along of [-length / 2, length / 2]) {
-    for (const side of [-stemW / 2, stemW / 2]) points.push({ x: stemDist + along, y: side });
-  }
-  const arc = Math.max(bend, 1e-4);
-  const half = claspLen / 2 / arc;
-  const rot = Math.PI / 2;
-  for (let i = 0; i <= 18; i++) {
-    const a = Math.PI / 2 - half + (2 * half * i) / 18;
-    for (const u of [-claspW / 2, claspW / 2]) {
-      const lx = Math.cos(a) * (bend + u);
-      const ly = -bend + Math.sin(a) * (bend + u);
-      points.push({
-        x: Math.cos(rot) * lx - Math.sin(rot) * ly + claspDist,
-        y: Math.sin(rot) * lx + Math.cos(rot) * ly,
-      });
-    }
-  }
-  return points;
-}
-
-export function connectorReach(outer: number, band: number, stemLen: number): number {
-  let max = outer;
-  for (const point of connectorPoints(outer, band, stemLen)) {
-    max = Math.max(max, Math.hypot(point.x, point.y));
-  }
-  return max;
-}
-
-/** Sleeve and grip sizes. `basis` is the unstretched bar length. No mesh. */
 export function buckleMetrics(width: number, basis: number): {
   sleeveLen: number;
   sleeveW: number;
@@ -113,45 +39,6 @@ export function buckleMetrics(width: number, basis: number): {
   return { sleeveLen, sleeveW, gripSpan: sleeveLen * 0.62 * 0.7, gripStick: width * 0.48 * 0.7 };
 }
 
-export function plastic(color: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.02 });
-}
-
-export function discRing(outer: number, band: number, gap: number, depth: number, color: number): THREE.Mesh {
-  const inner = outer - band;
-  const open = Math.min(Math.max(gap, 0.2), Math.PI);
-  const a0 = open / 2;
-  const a1 = Math.PI * 2 - open / 2;
-  const mid = (outer + inner) / 2;
-  const cap = band / 2;
-  const bevelSize = cap * 0.5;
-  const outerIn = outer - bevelSize;
-  const innerIn = inner + bevelSize;
-  const capIn = (outerIn - innerIn) / 2;
-  const shape = new THREE.Shape();
-  const endCap = (angle: number, fromInner: boolean) => {
-    const start = fromInner ? angle + Math.PI : angle;
-    shape.absarc(Math.cos(angle) * mid, Math.sin(angle) * mid, capIn, start, start + Math.PI, false);
-  };
-  shape.absarc(0, 0, outerIn, a0, a1, false);
-  endCap(a1, false);
-  shape.absarc(0, 0, innerIn, a1, a0, true);
-  endCap(a0, true);
-  const bevelThickness = depth * 0.48;
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: true,
-    bevelThickness,
-    bevelSize,
-    bevelSegments: 8,
-    curveSegments: 48,
-  });
-  geometry.translate(0, 0, -(depth + bevelThickness * 2) / 2);
-  geometry.computeVertexNormals();
-  return new THREE.Mesh(geometry, plastic(color));
-}
-
-/** Length runs along local +X. Straight ends stay square; long edges keep a fillet. */
 export function straightBar(length: number, width: number, depth: number, material: THREE.Material): THREE.Mesh {
   const r = Math.min(width * 0.28, depth * 0.45);
   const x = -width / 2;
@@ -172,34 +59,6 @@ export function straightBar(length: number, width: number, depth: number, materi
   geometry.computeVertexNormals();
   return new THREE.Mesh(geometry, material);
 }
-
-export function capsuleBar(length: number, width: number, depth: number, color: number): THREE.Mesh {
-  const radius = width / 2;
-  const bevelSize = radius * 0.5;
-  const lengthIn = Math.max(0.02, length - bevelSize * 2);
-  const widthIn = Math.max(0.02, width - bevelSize * 2);
-  const radiusIn = widthIn / 2;
-  const straight = Math.max(0.001, lengthIn - widthIn);
-  const shape = new THREE.Shape();
-  shape.moveTo(-straight / 2, -radiusIn);
-  shape.lineTo(straight / 2, -radiusIn);
-  shape.absarc(straight / 2, 0, radiusIn, -Math.PI / 2, Math.PI / 2, false);
-  shape.lineTo(-straight / 2, radiusIn);
-  shape.absarc(-straight / 2, 0, radiusIn, Math.PI / 2, Math.PI * 1.5, false);
-  const bevelThickness = depth * 0.48;
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: true,
-    bevelThickness,
-    bevelSize,
-    bevelSegments: 8,
-    curveSegments: 24,
-  });
-  geometry.translate(0, 0, -(depth + bevelThickness * 2) / 2);
-  geometry.computeVertexNormals();
-  return new THREE.Mesh(geometry, plastic(color));
-}
-
 function fakeShadow(length: number, width: number, x: number, y: number): THREE.Mesh {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -223,116 +82,6 @@ function fakeShadow(length: number, width: number, x: number, y: number): THREE.
   mesh.receiveShadow = false;
   return mesh;
 }
-
-/**
- * Same length, width and square ends as the straight clasp.
- * The long axis follows the outer ring it rests on. Local origin is the clasp center.
- * Local -Y points at that ring's center.
- */
-function claspProfile(width: number, depth: number): { u: number; v: number }[] {
-  const r = Math.min(width * 0.28, depth * 0.45);
-  const hw = width / 2;
-  const hd = depth / 2;
-  const pts: { u: number; v: number }[] = [];
-  const corner = (cx: number, cy: number, a0: number, a1: number) => {
-    const n = 4;
-    for (let i = 0; i < n; i++) {
-      const t = a0 + ((a1 - a0) * i) / n;
-      pts.push({ u: cx + Math.cos(t) * r, v: cy + Math.sin(t) * r });
-    }
-  };
-  corner(-hw + r, -hd + r, Math.PI, Math.PI * 1.5);
-  corner(hw - r, -hd + r, -Math.PI / 2, 0);
-  corner(hw - r, hd - r, 0, Math.PI / 2);
-  corner(-hw + r, hd - r, Math.PI / 2, Math.PI);
-  return pts;
-}
-
-/** Bent clasp. Long edges keep the straight bar's fillet. The two ends stay square cuts. */
-function bentClasp(length: number, width: number, depth: number, radius: number, material: THREE.Material): THREE.Mesh {
-  const profile = claspProfile(width, depth);
-  const half = length / 2 / radius;
-  const steps = 18;
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const count = profile.length;
-  for (let i = 0; i <= steps; i++) {
-    const a = Math.PI / 2 - half + (2 * half * i) / steps;
-    const radialX = Math.cos(a);
-    const radialY = Math.sin(a);
-    for (const p of profile) {
-      positions.push(radialX * (radius + p.u), -radius + radialY * (radius + p.u), p.v);
-    }
-  }
-  for (let i = 0; i < steps; i++) {
-    for (let j = 0; j < count; j++) {
-      const a = i * count + j;
-      const b = i * count + ((j + 1) % count);
-      const c = (i + 1) * count + j;
-      const d = (i + 1) * count + ((j + 1) % count);
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  const cap = (station: number, outward: boolean) => {
-    const base = station * count;
-    for (let j = 1; j < count - 1; j++) {
-      indices.push(base, base + (outward ? j + 1 : j), base + (outward ? j : j + 1));
-    }
-  };
-  cap(0, false);
-  cap(steps, true);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return new THREE.Mesh(geometry, material);
-}
-
-/** One stem plus one clasp, on the outside of a ring at `angle` (0 = +X). */
-export function attachConnector(
-  parent: THREE.Object3D,
-  outer: number,
-  band: number,
-  depth: number,
-  material: THREE.Material,
-  angle: number,
-  stemLen?: number,
-): void {
-  const layout = connectorLayout(outer, band, stemLen ?? connectorMetrics(outer, band).stemLen);
-  const { stemLen: length, stemW, claspLen, claspW, stemDist, claspDist, bend } = layout;
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  const stem = straightBar(length, stemW, depth, material);
-  stem.position.set(c * stemDist, s * stemDist, 0);
-  stem.rotation.z = angle;
-  parent.add(stem);
-  const clasp = bentClasp(claspLen, claspW, depth, bend, material);
-  clasp.position.set(c * claspDist, s * claspDist, 0.08);
-  clasp.rotation.z = angle + Math.PI / 2;
-  parent.add(clasp);
-}
-
-/** Ring plus any number of connectors. Connectors share the ring color. */
-export function ringWithConnectors(
-  outer: number,
-  band: number,
-  gap: number,
-  depth: number,
-  color: number,
-  connectors: { angle: number; stem: number }[],
-): THREE.Group {
-  const group = new THREE.Group();
-  const ring = discRing(outer, band, gap, depth, color);
-  ring.position.z = 0.04;
-  group.add(ring);
-  const material = plastic(color);
-  for (const connector of connectors) {
-    attachConnector(group, outer, band, depth, material, connector.angle, connector.stem);
-  }
-  return group;
-}
-
-/** Capsule plus one centered buckle. Buckle size follows the unstretched bar length. The buckle stays fixed when the capsule slides. */
 /** Silver sleeve and two grips. Local +X runs along the rod. */
 export function silverBuckle(width: number, basis: number, depth: number, lengthScale = 1): THREE.Group {
   const group = new THREE.Group();
@@ -355,14 +104,6 @@ export function silverBuckle(width: number, basis: number, depth: number, length
   }
   return group;
 }
-
-export function barWithBuckle(length: number, buckleBasis: number, width: number, depth: number, color: number): THREE.Group {
-  const group = new THREE.Group();
-  group.add(capsuleBar(length, width, depth, color));
-  group.add(silverBuckle(width, buckleBasis, depth));
-  return group;
-}
-
 /**
  * Flat screws in the XY plane, thickness along Z.
  * Straight: round head at the local origin, shaft along +X, open tip at +X.

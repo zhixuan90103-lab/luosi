@@ -22,7 +22,6 @@ import { haptics } from './utils/haptics';
 import { mountPlay } from './game/play';
 import { packedLevels } from './game/packedLevels';
 import { usePackedLevels } from './game/levelio';
-import { mountEditor } from './game/editor';
 import { mountPlaySession } from './game/playSession';
 import { mountPhoneSettings } from './game/phoneSettings';
 import { mountResult } from './game/result';
@@ -93,7 +92,7 @@ function setLog(text: string): void {
 
 async function boot(): Promise<void> {
   usePackedLevels(packedLevels);
-  if (!document.body.classList.contains('page-editor')) mountPhoneSettings();
+  mountPhoneSettings();
   applyNativeClass();
 
   const native = Capacitor.isNativePlatform();
@@ -193,9 +192,7 @@ async function boot(): Promise<void> {
   // Optional: document.body.classList.add('debug-safe-area')
 
   const hud = { setLevel, resetMoves: () => setScore(0, false) };
-  levels = document.body.classList.contains('page-editor')
-    ? mountEditor(play, setStatus, hud)
-    : mountPlaySession(play, hud);
+  levels = mountPlaySession(play, hud);
 
   if (haptics.isNativeIos()) {
     setLog(
