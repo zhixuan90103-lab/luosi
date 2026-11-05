@@ -7,6 +7,13 @@ export type ScrewBody = {
   y: number;
   theta: number;
   color?: number;
+  /**
+   * Straight-edge lengths. Straight has one, L has two, U has three
+   * (left leg, bottom, right leg). Missing means the built-in sizes.
+   */
+  edges?: number[];
+  /** One silver buckle per edge, measured from that edge's dead end. */
+  buckleT?: number[];
   /** Silver buckles locked in world space. The screw slides through them. */
   locks?: { x: number; y: number }[];
 };

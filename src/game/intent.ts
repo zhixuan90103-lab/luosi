@@ -1,5 +1,6 @@
 /**
- * Which piece a press means when a nut and a screw both sit under the finger.
+ * Feel distances and which piece a press means.
+ * Contact outlines stay in `screws.ts`. Nothing here shrinks a head, nut, or buckle.
  * One piece locks immediately. Two pieces whose slide axes differ wait for a
  * short stroke, then follow the axis the finger moved along.
  */
@@ -9,8 +10,8 @@ import { VIEW_H } from './camera';
 
 /** Along-axis travel, as a fraction of design width, before the stroke may choose. */
 export const INTENT_CLEAR = 0.01;
-/** Remaining slide, as a fraction of design width, that a lift may finish. */
-export const INTENT_SLEEVE = 0.02;
+/** On release only. Dragging still stops on the real outline. */
+export const INTENT_SLEEVE = 0.05;
 /** The winning axis must beat the other by this much. */
 export const INTENT_AXIS = 1.5;
 /** |cross| of the two slide axes below this means a stroke cannot separate them. */

@@ -1,0 +1,129 @@
+.editor-body {
+  display: flex;
+  margin: 0;
+  height: 100dvh;
+  background: #1c1915;
+  color: #f6f1e8;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.editor-body #shell {
+  flex: 1;
+  min-width: 0;
+  height: 100dvh;
+}
+
+#editor-panel {
+  width: 320px;
+  flex-shrink: 0;
+  overflow: auto;
+  padding: 16px;
+  background: #2a241e;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.editor-head h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.editor-head a {
+  color: #f4d03f;
+}
+
+.editor-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#editor-panel button,
+#editor-panel input {
+  font: inherit;
+}
+
+#editor-panel button {
+  flex: 1;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #3d342c;
+  color: inherit;
+  cursor: pointer;
+}
+
+#editor-panel button.active,
+#level-list button.active {
+  background: #8e44ad;
+}
+
+#level-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#level-list li {
+  display: flex;
+}
+
+#level-list button {
+  text-align: left;
+}
+
+.editor-angle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.editor-angle input {
+  width: 96px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 0;
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.palette button {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.palette button.picked {
+  border-color: white;
+}
+
+.editor-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #d9cfc3;
+}
+
+.save {
+  background: #e67e22 !important;
+  color: #1c1915 !important;
+  font-weight: 700;
+}

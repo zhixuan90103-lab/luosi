@@ -226,25 +226,122 @@ export type ScrewSpan =
   | { kind: 'line'; x0: number; y0: number; x1: number; y1: number }
   | { kind: 'arc'; cx: number; cy: number; a0: number; a1: number };
 
-/** Local centerline. Mesh, contact, and picking all read this. */
-export function screwSpans(kind: ScrewKind): ScrewSpan[] {
+/** How many straight edges this kind has. */
+export function edgeCount(kind: ScrewKind): number {
+  if (kind === 'straight') return 1;
+  if (kind === 'l') return 2;
+  return 3;
+}
+
+/** Built-in edge lengths: straight, then L's two legs, then U's left, bottom, right. */
+export function defaultEdges(kind: ScrewKind): number[] {
+  if (kind === 'straight') return [SCREW.straight];
+  if (kind === 'l') return [SCREW.leg, SCREW.leg];
+  return [SCREW.leg, SCREW.span, SCREW.leg];
+}
+
+export function resolveEdges(kind: ScrewKind, edges?: readonly number[]): number[] {
+  const base = defaultEdges(kind);
+  return base.map((value, index) => edges?.[index] ?? value);
+}
+
+/** Sleeve length shared by every silver buckle. */
+export function buckleSleeveLen(): number {
+  return buckleMetrics(SCREW.width, SCREW.straight * BUCKLE_LENGTH_SCALE).sleeveLen;
+}
+
+/** Shortest straight edge that can still hold its buckle. */
+export function minEdgeLength(kind: ScrewKind, index: number): number {
+  const sleeve = buckleSleeveLen();
+  if (kind === 'straight') return SCREW_CAP_HALF + sleeve;
+  if (kind === 'l' && index === 0) return Math.max(0.05, sleeve - SCREW.bend);
+  return sleeve;
+}
+
+/**
+ * Straight runs from the dead end toward the open tip.
+ * U's bottom uses the left bend as the dead end.
+ */
+export function shapeRuns(kind: ScrewKind, edges?: readonly number[]): { x0: number; y0: number; x1: number; y1: number }[] {
+  const e = resolveEdges(kind, edges);
   const r = SCREW.bend;
-  const leg = SCREW.leg;
-  if (kind === 'straight') return [{ kind: 'line', x0: 0, y0: 0, x1: SCREW.straight, y1: 0 }];
+  if (kind === 'straight') return [{ x0: 0, y0: 0, x1: e[0], y1: 0 }];
   if (kind === 'l') {
     return [
-      { kind: 'line', x0: r + leg, y0: -r, x1: 0, y1: -r },
-      { kind: 'arc', cx: 0, cy: 0, a0: -Math.PI / 2, a1: -Math.PI },
-      { kind: 'line', x0: -r, y0: 0, x1: -r, y1: leg },
+      { x0: 0, y0: -r, x1: r + e[0], y1: -r },
+      { x0: -r, y0: 0, x1: -r, y1: e[1] },
     ];
   }
-  const span = SCREW.span;
+  const span = e[1];
   return [
-    { kind: 'line', x0: 0, y0: leg, x1: 0, y1: 0 },
+    { x0: 0, y0: 0, x1: 0, y1: e[0] },
+    { x0: r, y0: -r, x1: r + span, y1: -r },
+    { x0: span + r * 2, y0: 0, x1: span + r * 2, y1: e[2] },
+  ];
+}
+
+export function runLength(run: { x0: number; y0: number; x1: number; y1: number }): number {
+  return Math.hypot(run.x1 - run.x0, run.y1 - run.y0);
+}
+
+/** Buckle center distance from the dead end, kept fully on the run. */
+export function clampBuckleT(length: number, t: number): number {
+  const half = buckleSleeveLen() / 2;
+  const lo = half;
+  const hi = Math.max(lo, length - half);
+  return Math.min(hi, Math.max(lo, t));
+}
+
+export function defaultBuckleT(kind: ScrewKind, edges?: readonly number[]): number[] {
+  const half = buckleSleeveLen() / 2;
+  return shapeRuns(kind, edges).map((run, index) => {
+    const inner = kind === 'straight' && index === 0 ? SCREW_CAP_HALF + half : half;
+    return clampBuckleT(runLength(run), inner);
+  });
+}
+
+export function buckleOnRun(
+  run: { x0: number; y0: number; x1: number; y1: number },
+  t: number,
+): { x: number; y: number; rot: number } {
+  const dx = run.x1 - run.x0;
+  const dy = run.y1 - run.y0;
+  const length = Math.hypot(dx, dy) || 1;
+  return {
+    x: run.x0 + (dx / length) * t,
+    y: run.y0 + (dy / length) * t,
+    rot: Math.atan2(dy, dx),
+  };
+}
+
+/** One buckle on each straight edge. `buckleT` is from the dead end. */
+export function authoredBuckles(
+  kind: ScrewKind,
+  edges: readonly number[],
+  buckleT: readonly number[],
+): { x: number; y: number; rot: number }[] {
+  return shapeRuns(kind, edges).map((run, index) => buckleOnRun(run, clampBuckleT(runLength(run), buckleT[index] ?? 0)));
+}
+
+/** Local centerline. Mesh, contact, and picking all read this. */
+export function screwSpans(kind: ScrewKind, edges?: readonly number[]): ScrewSpan[] {
+  const r = SCREW.bend;
+  const e = resolveEdges(kind, edges);
+  if (kind === 'straight') return [{ kind: 'line', x0: 0, y0: 0, x1: e[0], y1: 0 }];
+  if (kind === 'l') {
+    return [
+      { kind: 'line', x0: r + e[0], y0: -r, x1: 0, y1: -r },
+      { kind: 'arc', cx: 0, cy: 0, a0: -Math.PI / 2, a1: -Math.PI },
+      { kind: 'line', x0: -r, y0: 0, x1: -r, y1: e[1] },
+    ];
+  }
+  const span = e[1];
+  return [
+    { kind: 'line', x0: 0, y0: e[0], x1: 0, y1: 0 },
     { kind: 'arc', cx: r, cy: 0, a0: Math.PI, a1: Math.PI * 1.5 },
     { kind: 'line', x0: r, y0: -r, x1: r + span, y1: -r },
     { kind: 'arc', cx: r + span, cy: 0, a0: -Math.PI / 2, a1: 0 },
-    { kind: 'line', x0: span + r * 2, y0: 0, x1: span + r * 2, y1: leg },
+    { kind: 'line', x0: span + r * 2, y0: 0, x1: span + r * 2, y1: e[2] },
   ];
 }
 
@@ -261,9 +358,9 @@ function straightCenter(): ScrewSample[] {
  * Elbow in the bottom-left. One open tip runs +X, the other runs +Y.
  * Arc goes the short way from the horizontal leg to the vertical leg.
  */
-function spanSamples(kind: ScrewKind): ScrewSample[] {
+function spanSamples(kind: ScrewKind, edges?: readonly number[]): ScrewSample[] {
   const samples: ScrewSample[] = [];
-  for (const span of screwSpans(kind)) {
+  for (const span of screwSpans(kind, edges)) {
     if (span.kind === 'line') pushLine(samples, span.x0, span.y0, span.x1, span.y1, 8);
     else pushArc(samples, span.cx, span.cy, SCREW.bend, span.a0, span.a1, 16);
   }
@@ -286,7 +383,7 @@ function centerOf(kind: ScrewKind): ScrewSample[] {
 }
 
 /** Local AABB of the finished screw, before world rotation. */
-export function screwLocalBounds(kind: ScrewKind): { minX: number; minY: number; maxX: number; maxY: number } {
+export function screwLocalBounds(kind: ScrewKind, edges?: readonly number[]): { minX: number; minY: number; maxX: number; maxY: number } {
   const half = Math.max(SCREW.width / 2, SCREW.nut);
   let minX = Infinity;
   let minY = Infinity;
@@ -298,7 +395,7 @@ export function screwLocalBounds(kind: ScrewKind): { minX: number; minY: number;
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
   };
-  for (const p of centerOf(kind)) {
+  for (const p of (edges ? spanSamples(kind, edges) : centerOf(kind))) {
     add(p.x - half, p.y - half);
     add(p.x + half, p.y + half);
   }
@@ -562,6 +659,24 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
   };
 }
 
+/** Layout for a screw whose edges and buckle seats are stored on the level. */
+export function authoredLayout(kind: ScrewKind, edges: readonly number[], buckleT: readonly number[]): ScrewLayout {
+  const half = buckleSleeveLen() / 2;
+  const runs = shapeRuns(kind, edges).map((run, index) => {
+    const length = runLength(run);
+    const t = clampBuckleT(length, buckleT[index] ?? 0);
+    return {
+      x0: run.x0,
+      y0: run.y0,
+      x1: run.x1,
+      y1: run.y1,
+      stations: [] as number[],
+      minT: Math.min(length, t + half + SCREW_CAP_HALF),
+    };
+  });
+  return { head: kind === 'straight', buckles: authoredBuckles(kind, edges, buckleT), runs };
+}
+
 export function nutMesh(depth: number, color: number): THREE.Mesh {
   return new THREE.Mesh(nutGeometry(depth), new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.12 }));
 }
@@ -574,17 +689,21 @@ export function aimNut(mesh: THREE.Object3D, dx: number, dy: number): void {
   mesh.quaternion.setFromUnitVectors(torusAxis, shaftAxis);
 }
 
-export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles?: { x: number; y: number }[]): THREE.Group {
+export function screwMesh(
+  kind: ScrewKind,
+  depth: number,
+  color: number,
+  buckles?: { x: number; y: number; rot?: number }[],
+  edges?: readonly number[],
+): THREE.Group {
   const group = new THREE.Group();
   const body = new THREE.Group();
   body.scale.z = 0.35;
   group.add(body);
   const metal = new THREE.MeshStandardMaterial({ color, metalness: 0.12, roughness: 0.32 });
   const radius = SHAFT_CORE;
-  const r = SCREW.bend;
-  const leg = SCREW.leg;
   const layout = screwLayout(kind);
-  const seats = buckles ?? layout.buckles;
+  const seats: { x: number; y: number; rot?: number }[] = buckles ?? layout.buckles;
   const placeBuckle = (x: number, y: number, rotationZ = 0) => {
     const buckle = silverBuckle(SCREW.width, SCREW.straight, depth, BUCKLE_LENGTH_SCALE);
     buckle.position.set(x, y, 0);
@@ -595,9 +714,10 @@ export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles
   if (kind === 'straight') {
     const headLength = screwCap(depth).length;
     const samples: ScrewSample[] = [];
-    pushLine(samples, headLength / 2, 0, SCREW.straight, 0, 24);
+    const length = edges?.[0] ?? SCREW.straight;
+    pushLine(samples, headLength / 2, 0, length, 0, 24);
     addSweptShaft(body, samples, radius, metal, false);
-    addThreads(body, headLength / 2, 0, SCREW.straight, 0, radius, metal);
+    addThreads(body, headLength / 2, 0, length, 0, radius, metal);
     const head = new THREE.Mesh(headGeometry(depth), metal);
     head.userData.head = true;
     head.quaternion.setFromUnitVectors(torusAxis, new THREE.Vector3(1, 0, 0));
@@ -606,16 +726,17 @@ export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles
     return group;
   }
   if (kind === 'l') {
-    addSweptShaft(body, lCenter(), radius, metal, true);
-    addThreads(body, r + leg, -r, 0, -r, radius, metal);
-    addThreads(body, -r, 0, -r, leg, radius, metal);
-    placeBuckle(seats[0].x, seats[0].y);
+    addSweptShaft(body, spanSamples('l', edges), radius, metal, true);
+    for (const span of screwSpans('l', edges)) {
+      if (span.kind === 'line') addThreads(body, span.x0, span.y0, span.x1, span.y1, radius, metal);
+    }
+    seats.forEach((seat) => placeBuckle(seat.x, seat.y, seat.rot ?? 0));
     return group;
   }
-  const span = SCREW.span;
-  addSweptShaft(body, uCenter(), radius, metal, true);
-  addThreads(body, 0, leg, 0, 0, radius, metal);
-  addThreads(body, span + r * 2, 0, span + r * 2, leg, radius, metal);
-  for (const buckle of seats) placeBuckle(buckle.x, buckle.y, Math.PI / 2);
+  addSweptShaft(body, spanSamples('u', edges), radius, metal, true);
+  for (const span of screwSpans('u', edges)) {
+    if (span.kind === 'line') addThreads(body, span.x0, span.y0, span.x1, span.y1, radius, metal);
+  }
+  for (const buckle of seats) placeBuckle(buckle.x, buckle.y, buckle.rot ?? Math.PI / 2);
   return group;
 }

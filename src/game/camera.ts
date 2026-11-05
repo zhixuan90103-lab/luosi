@@ -93,7 +93,7 @@ export function boardBounds(board: Board): Aabb {
     maxY = Math.max(maxY, y);
   };
   for (const screw of board.screws) {
-    const local = screwLocalBounds(screw.kind);
+    const local = screwLocalBounds(screw.kind, screw.edges);
     const c = Math.cos(screw.theta);
     const s = Math.sin(screw.theta);
     for (const x of [local.minX, local.maxX]) {

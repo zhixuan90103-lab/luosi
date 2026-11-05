@@ -74,7 +74,7 @@ HUD 状态行有 `plugin: true/false`。`false` = 仍在默认 `CAPBridgeViewCon
 | 手机设置 | `src/game/phoneSettings.ts`。齿轮里是震动测试和四档手感。试玩只发按下、撞上、解开 |
 | 过关结算 | 松手时盘上没有螺丝和扣，`play.ts` 调 `onCleared`，`result.ts` 弹出 `#result`。重玩再开当前关，下一关向后，最后一关回到第 1 关 |
 | 试玩镜头 | `camera.ts` 视口高 10。`play.ts` 把螺丝外框放进顶栏和底栏之间，四周留 24 设计像素。适配只用这块区域的 `FIT_FILL`（0.9），这就是正常大小 |
-| 试玩规则 | [SCREWS.md](./SCREWS.md)。滑动 `screws.ts`，叠件选轴 `intent.ts`，闪光 `feedback.ts`，选中描边 `outline.ts`，离场 `fall.ts`。`play.ts` 只收指针 |
+| 试玩规则 | [SCREWS.md](./SCREWS.md)。滑动和松手补脱离在 `screws.ts`，尺度在 `intent.ts`，闪光 `feedback.ts`，选中描边 `outline.ts`，离场 `fall.ts`。`play.ts` 只收指针 |
 | 帧率 | `#hud-fps`。约每 0.25 秒用未封顶的帧间隔刷新一次 |
 | 音效（规划） | [AUDIO.md](./AUDIO.md) |
 | 震动接线 | [HAPTICS.md](./HAPTICS.md) |

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>关卡编辑</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/editor/editor.css" />
+  </head>
+  <body class="editor-body">
+    <div id="shell">
+      <div id="viewport">
+        <div id="app">
+          <div id="stage" aria-label="editor-stage"></div>
+        </div>
+      </div>
+    </div>
+    <aside id="editor-panel">
+      <header class="editor-head">
+        <h1>关卡编辑</h1>
+        <a href="./index.html">试玩页</a>
+      </header>
+      <section>
+        <div class="editor-row">
+          <button type="button" id="level-add">新增空关</button>
+          <button type="button" id="level-delete">删除此关</button>
+        </div>
+        <div class="editor-row">
+          <button type="button" id="level-up">上移</button>
+          <button type="button" id="level-down">下移</button>
+        </div>
+        <ol id="level-list"></ol>
+      </section>
+      <section>
+        <div class="editor-row">
+          <button type="button" data-kind="straight">加直螺丝</button>
+          <button type="button" data-kind="l">加 L</button>
+          <button type="button" data-kind="u">加 U</button>
+        </div>
+        <button type="button" id="screw-delete">删除选中螺丝</button>
+        <div class="editor-row">
+          <label class="editor-angle">X <input id="screw-x" type="number" step="1" disabled /></label>
+          <label class="editor-angle">Y <input id="screw-y" type="number" step="1" disabled /></label>
+        </div>
+        <label class="editor-angle">
+          角度
+          <input id="screw-angle" type="number" step="1" disabled />
+        </label>
+      </section>
+      <section>
+        <p class="editor-note">点直边加螺丝扣。点已有的扣选中它，再用色板改颜色。X、Y 以画面中心为 0,0，向右、向下为正。</p>
+        <div class="editor-row">
+          <button type="button" id="nut-space">螺丝扣均匀排布</button>
+          <button type="button" id="nut-delete">删除螺丝扣</button>
+        </div>
+        <div id="palette" class="palette"></div>
+      </section>
+      <button type="button" id="save" class="save">保存</button>
+      <p id="editor-status" class="editor-note"></p>
+    </aside>
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

@@ -69,7 +69,8 @@ npm run ios
 
 - 外形和中心线：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
 - 拖动、阻挡和点选：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡、离场、意图、闪光或描边公式。直段和弯只从 `screwSpans` 读
-- 离场改 `fall.ts`，叠件选轴改 `intent.ts`，闪光改 `feedback.ts`，选中描边改 `outline.ts`。描边是 WebGPU 屏幕遮罩，跟实际网格走，不放大网格，不含银卡扣  
+- 离场改 `fall.ts`，手感尺度和叠件选轴改 `intent.ts`，闪光改 `feedback.ts`，选中描边改 `outline.ts`。描边是 WebGPU 屏幕遮罩，跟实际网格走，不放大网格，不含银卡扣
+- 松手补脱离在 `screws.ts` 的 `releaseSlack`。尺度是 `INTENT_SLEEVE`（设计宽度的 5%）。拖的时候仍按真实接触停，不提前算离开  
 - 关卡：`public/levels/`。读档在 `src/game/levelio.ts`。没有扣的数据时按 `screwLayout` 生成
 - 保留：adapt / create-renderer / haptics / plugins / `base`  
 - 触控：`clientToDesign` + 忽略 letterbox 外  

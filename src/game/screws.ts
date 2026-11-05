@@ -10,6 +10,7 @@ import {
   buckleShape,
   headSilhouette,
   nutSilhouette,
+  authoredLayout,
   screwLayout,
   screwSpans,
   type ScrewKind,
@@ -63,8 +64,13 @@ function screwOf(screws: ScrewBody[], id: string): ScrewBody | undefined {
   return screws.find((screw) => screw.id === id);
 }
 
-function runOf(kind: ScrewKind, index: number): ScrewRun {
-  return seatedLayout(kind).runs[index];
+function layoutOf(screw: ScrewBody): ScrewLayout {
+  if (screw.edges && screw.buckleT) return authoredLayout(screw.kind, screw.edges, screw.buckleT);
+  return seatedLayout(screw.kind);
+}
+
+function runOf(screw: ScrewBody, index: number): ScrewRun {
+  return layoutOf(screw).runs[index];
 }
 
 export function toWorld(screw: ScrewBody, x: number, y: number): { x: number; y: number } {
@@ -74,7 +80,7 @@ export function toWorld(screw: ScrewBody, x: number, y: number): { x: number; y:
 }
 
 export function nutLocal(screw: ScrewBody, nut: NutBody): { x: number; y: number; dx: number; dy: number } {
-  const run = runOf(screw.kind, nut.run);
+  const run = runOf(screw, nut.run);
   const dx = run.x1 - run.x0;
   const dy = run.y1 - run.y0;
   const length = Math.hypot(dx, dy) || 1;
@@ -89,7 +95,7 @@ export function nutWorld(screw: ScrewBody, nut: NutBody): { x: number; y: number
 
 /** Shaft direction in world space, dead end toward the tip. */
 export function nutAxis(screw: ScrewBody, nut: NutBody): { x: number; y: number } {
-  const run = runOf(screw.kind, nut.run);
+  const run = runOf(screw, nut.run);
   const localX = run.x1 - run.x0;
   const localY = run.y1 - run.y0;
   const length = Math.hypot(localX, localY) || 1;
@@ -157,7 +163,7 @@ function pushArc(out: Circle[], screw: ScrewBody, cx: number, cy: number, a0: nu
 /** Shaft and elbow centerlines. The head, nuts, and buckles are slabs, not fat circles. */
 function tubeCircles(screw: ScrewBody): Circle[] {
   const out: Circle[] = [];
-  for (const span of screwSpans(screw.kind)) {
+  for (const span of screwSpans(screw.kind, screw.edges)) {
     if (span.kind === 'line') pushSegment(out, screw, span.x0, span.y0, span.x1, span.y1);
     else pushArc(out, screw, span.cx, span.cy, span.a0, span.a1);
   }
@@ -167,7 +173,7 @@ function tubeCircles(screw: ScrewBody): Circle[] {
 /** Straight runs in world space. The barrel is this capsule; metal past it is the bend. */
 function straightEnds(screw: ScrewBody): { x0: number; y0: number; x1: number; y1: number }[] {
   const lines: { x0: number; y0: number; x1: number; y1: number }[] = [];
-  for (const span of screwSpans(screw.kind)) {
+  for (const span of screwSpans(screw.kind, screw.edges)) {
     if (span.kind !== 'line') continue;
     const a = toWorld(screw, span.x0, span.y0);
     const b = toWorld(screw, span.x1, span.y1);
@@ -209,7 +215,7 @@ function bendHitsRect(screw: ScrewBody, circle: Circle, rect: Rect): boolean {
 
 function elbowCircles(screw: ScrewBody): Circle[] {
   const out: Circle[] = [];
-  for (const span of screwSpans(screw.kind)) {
+  for (const span of screwSpans(screw.kind, screw.edges)) {
     if (span.kind === 'arc') pushArc(out, screw, span.cx, span.cy, span.a0, span.a1);
   }
   return out;
@@ -476,7 +482,7 @@ function nutBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[], nut:
 
 /** Distance along the run where the nut's back edge is past the round tip. */
 export function nutClearAt(screw: ScrewBody, nut: NutBody): number {
-  const run = runOf(screw.kind, nut.run);
+  const run = runOf(screw, nut.run);
   const length = Math.hypot(run.x1 - run.x0, run.y1 - run.y0);
   return length + SHAFT_RADIUS + NUT_HALF;
 }
@@ -499,7 +505,7 @@ export function slideNut(
   const nut = nuts.find((item) => item.id === id);
   const screw = nut ? screwOf(screws, nut.screwId) : undefined;
   if (!nut || !screw) return { blocked: false };
-  const run = runOf(screw.kind, nut.run);
+  const run = runOf(screw, nut.run);
   let lo = run.minT;
   let hi = Number.POSITIVE_INFINITY;
   for (const other of nuts) {
@@ -546,7 +552,10 @@ export function screwSlideAxis(screw: ScrewBody): { x: number; y: number } {
 /** Remember buckle positions in world space before the screw starts sliding. */
 export function pinLocks(screw: ScrewBody): void {
   if (screw.locks && screw.locks.length > 0) return;
-  screw.locks = seatedLayout(screw.kind).buckles.map((buckle) => toWorld(screw, buckle.x, buckle.y));
+  const buckles = screw.edges && screw.buckleT
+    ? authoredLayout(screw.kind, screw.edges, screw.buckleT).buckles
+    : seatedLayout(screw.kind).buckles;
+  screw.locks = buckles.map((buckle) => toWorld(screw, buckle.x, buckle.y));
 }
 
 function shaftSegments(screw: ScrewBody): { ax: number; ay: number; bx: number; by: number }[] {
@@ -590,9 +599,9 @@ function headSlab(screw: ScrewBody): Slab {
 
 type Arc = { cx: number; cy: number; a0: number; a1: number };
 
-function bendArcs(kind: ScrewKind): Arc[] {
+function bendArcs(screw: ScrewBody): Arc[] {
   const arcs: Arc[] = [];
-  for (const span of screwSpans(kind)) {
+  for (const span of screwSpans(screw.kind, screw.edges)) {
     if (span.kind === 'arc') arcs.push({ cx: span.cx, cy: span.cy, a0: span.a0, a1: span.a1 });
   }
   return arcs;
@@ -629,7 +638,7 @@ function screwPickDistance(screw: ScrewBody, x: number, y: number): number {
     distance = Math.min(distance, Math.hypot(seg.ax + abx * t - x, seg.ay + aby * t - y));
   }
   const local = toLocal(screw, x, y);
-  for (const arc of bendArcs(screw.kind)) distance = Math.min(distance, distToArc(local.x, local.y, arc));
+  for (const arc of bendArcs(screw)) distance = Math.min(distance, distToArc(local.x, local.y, arc));
   if (distance <= SHAFT_CORE) return distance;
   for (const rect of buckleRects(screw)) {
     const { along, across } = frameOf(rect, x, y);

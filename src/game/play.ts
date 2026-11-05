@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from '../adapt/design';
 import { mountOutline } from './outline';
-import { aimNut, nutMesh, PART, screwMesh } from './parts';
+import { aimNut, authoredLayout, nutMesh, PART, screwMesh } from './parts';
 import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
 import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, releaseSlack, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
 import type { Board } from './board';
@@ -125,7 +125,10 @@ export function mountPlay(options: {
     clearViews();
     const { depth, scale } = PART;
     for (const screw of board.screws) {
-      const mesh = screwMesh(screw.kind, depth * scale, screw.color ?? 0x9aa3a8, seatedLayout(screw.kind).buckles);
+      const seats = screw.edges && screw.buckleT
+        ? authoredLayout(screw.kind, screw.edges, screw.buckleT).buckles
+        : seatedLayout(screw.kind).buckles;
+      const mesh = screwMesh(screw.kind, depth * scale, screw.color ?? 0x9aa3a8, seats, screw.edges);
       mesh.position.set(screw.x, screw.y, 0);
       mesh.rotation.z = screw.theta;
       mesh.traverse((obj) => {
