@@ -26,7 +26,7 @@
 | iOS 注入 | `scripts/bootstrap-ios.mjs` |
 | 音效方案（未实现） | `docs/AUDIO.md` |
 | 画面零件 | `src/game/parts.ts`，规范见 `docs/PARTS.md` |
-| 当前操作 | `src/game/play.ts` 与 `board.ts`。环绕自己的中心转：环带上跟夹角，孔内按环带半径折算，圆心上、下方的上下滑按左右侧跟手指方向。杆沿长边滑动，银卡扣锁定。按下碰到零件、带动后再撞、提示亮开始变亮、抬手解开各震一次。无效晃动不震。过关约 1 秒后由 `main.ts` 弹出 `#result` |
+| 当前操作 | `play.ts` 收指针并每帧绘制。`screws.ts` 算扣和螺丝的滑动。按下、撞上、解开各震一次。松手后盘上没有螺丝和扣，`main.ts` 弹出 `#result` |
 | 手机设置 | `src/game/phoneSettings.ts`。试玩页右上角齿轮只开震动测试和四档手感 |
 | 规则 | `docs/SCREWS.md`。试玩读 `public/levels/` |
 
@@ -67,10 +67,9 @@ npm run ios
 
 ## 业务怎么加
 
-- 零件外形和组合：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
-- 操作：`src/game/play.ts` 收指针，`src/game/screws.ts` 算扣的滑动和螺丝穿过卡扣。规则以 `docs/SCREWS.md` 为准  
-- 外形：`src/game/parts.ts`，尺寸见 `docs/PARTS.md`  
-- 关卡：`public/levels/`。读档在 `src/game/levelio.ts`
+- 外形：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
+- 拖动和阻挡：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡公式  
+- 关卡：`public/levels/`。读档在 `src/game/levelio.ts`。没有扣的数据时按 `screwLayout` 生成
 - 保留：adapt / create-renderer / haptics / plugins / `base`  
 - 触控：`clientToDesign` + 忽略 letterbox 外  
 - 音效：按 `docs/AUDIO.md` 接入；禁止热路径 `new Audio()` / 每发一次桥  

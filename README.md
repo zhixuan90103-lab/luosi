@@ -11,13 +11,11 @@
 | [docs/AUDIO.md](./docs/AUDIO.md) | 音效方案（预解码 + 每帧一批 + 原生池） |
 | [docs/HAPTICS.md](./docs/HAPTICS.md) | 震动如何一次接对（插件注册 + 玩法层） |
 | [docs/SCREWS.md](./docs/SCREWS.md) | 螺丝扣拖动和卡扣阻挡 |
-| [docs/PARTS.md](./docs/PARTS.md) | 当前画面的基础件、组合，以及转环、滑杆、锁定卡扣 |
 | [docs/PARTS.md](./docs/PARTS.md) | 直、L、U 螺丝和银卡扣的尺寸 |
 
 ## 30 秒上手
 
 ```bash
-cd portrait-webgpu-base
 npm install
 npm run dev
 # → http://127.0.0.1:5190/

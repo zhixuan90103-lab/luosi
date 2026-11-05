@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from '../adapt/design';
 import { aimNut, nutMesh, PART, screwMesh } from './parts';
-import { nutAt, nutAxis, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, slideNut, slideScrew } from './screws';
+import { nutAt, nutAxis, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
 import type { Board } from './board';
 import { pulseHaptic } from './hapticFeel';
 import {
@@ -57,6 +57,7 @@ export function mountPlay(options: {
   scene.add(root);
 
   let board: Board = { screws: [] };
+
   let nutViews: { id: string; mesh: THREE.Mesh }[] = [];
   let screwViews: { id: string; mesh: THREE.Object3D }[] = [];
   let buckleViews: { screwId: string; mesh: THREE.Object3D }[] = [];
@@ -111,7 +112,7 @@ export function mountPlay(options: {
     clearViews();
     const { depth, scale } = PART;
     for (const screw of board.screws) {
-      const mesh = screwMesh(screw.kind, depth * scale, screw.color ?? 0x9aa3a8);
+      const mesh = screwMesh(screw.kind, depth * scale, screw.color ?? 0x9aa3a8, seatedLayout(screw.kind).buckles);
       mesh.position.set(screw.x, screw.y, 0);
       mesh.rotation.z = screw.theta;
       mesh.traverse((obj) => {

@@ -34,9 +34,9 @@ index.html
       #stage
         canvas
         #ui-root
-          header.hud
+          header.hud       关卡、分数、齿轮
           #result          过关结算，默认 hidden
-          #dock            #status 只留编辑提示
+          #haptic-panel    齿轮打开。震动测试和四档手感
 #device-switcher / #device-label   (web only)
 ```
 
@@ -71,9 +71,8 @@ HUD 状态行有 `plugin: true/false`。`false` = 仍在默认 `CAPBridgeViewCon
 | 系统手势 | 网页：`style.css`、`main.ts`。原生回弹和四边推迟：`BridgeViewController.swift`。规范见 [ENGINEERING.md](./ENGINEERING.md) §5b |
 | 启动 HUD | `index.html` + `main.ts` |
 | 关卡 | `public/levels/`，读档 `src/game/levelio.ts` |
-| 手机设置 | `src/game/phoneSettings.ts`。试玩页齿轮。震动测试和三档手感，数值写在滑杆上 |
-| 过关结算 | `play.ts` 计时后 `onCleared`；`result.ts` 弹出 `#result`。重玩再开当前关，下一关向后，最后一关回到第 1 关 |
-| 试玩镜头 | `camera.ts` 按螺丝外框取景，`play.ts` 收指针 |
-| 编辑镜头 | `camera.ts` 的 `editorFrame`。编辑栏「镜头」「上下」两条滑杆。不吃两指 |
+| 手机设置 | `src/game/phoneSettings.ts`。齿轮里是震动测试和四档手感。试玩只发按下、撞上、解开 |
+| 过关结算 | 松手时盘上没有螺丝和扣，`play.ts` 调 `onCleared`，`result.ts` 弹出 `#result`。重玩再开当前关，下一关向后，最后一关回到第 1 关 |
+| 试玩镜头 | `camera.ts` 视口高 10。`play.ts` 把螺丝外框放进顶栏和底栏之间，四周留 24 设计像素 |
 | 音效（规划） | [AUDIO.md](./AUDIO.md) |
 | 震动接线 | [HAPTICS.md](./HAPTICS.md) |

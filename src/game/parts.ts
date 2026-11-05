@@ -23,6 +23,15 @@ export function screwCap(depth: number): { length: number; bevel: number; half: 
   return { length, bevel, half: (length + bevel * 2) / 2 };
 }
 
+/**
+ * Top-view half-width of an octagon whose vertices sit on `vertex`.
+ * The head and nut are turned so the bolt axis lies in the board. Only the local Y
+ * of that octagon shows up across the shaft, and the widest of those is cos(π/8).
+ */
+export function flatHalf(vertex: number): number {
+  return vertex * Math.cos(Math.PI / 8);
+}
+
 /** Head and nut half-length at the depth `showLevel` passes into the mesh. */
 export const SCREW_CAP_HALF = screwCap(PART.depth * PART.scale).half;
 
@@ -39,8 +48,37 @@ export function buckleMetrics(width: number, basis: number): {
   return { sleeveLen, sleeveW, gripSpan: sleeveLen * 0.62 * 0.7, gripStick: width * 0.48 * 0.7 };
 }
 
-export function straightBar(length: number, width: number, depth: number, material: THREE.Material): THREE.Mesh {
-  const r = Math.min(width * 0.28, depth * 0.45);
+/** Corner radius of a rounded bar. Same value the mesh and the contact test use. */
+export function barCorner(width: number, depth: number): number {
+  return Math.min(width * 0.28, depth * 0.45);
+}
+
+/** Sleeve and grips at the depth passed into the mesh, including the round corners. */
+export function buckleShape(depth: number): {
+  sleeveLen: number;
+  sleeveW: number;
+  gripSpan: number;
+  gripStick: number;
+  sleeveCorner: number;
+  gripCorner: number;
+} {
+  const metrics = buckleMetrics(SCREW.width, SCREW.straight * BUCKLE_LENGTH_SCALE);
+  const barDepth = depth * 1.2;
+  return {
+    ...metrics,
+    sleeveCorner: barCorner(metrics.sleeveW, barDepth),
+    gripCorner: barCorner(metrics.gripStick, barDepth),
+  };
+}
+
+export function straightBar(
+  length: number,
+  width: number,
+  depth: number,
+  material: THREE.Material,
+  holeRadius = 0,
+): THREE.Mesh {
+  const r = barCorner(width, depth);
   const x = -width / 2;
   const y = -depth / 2;
   const shape = new THREE.Shape();
@@ -53,6 +91,11 @@ export function straightBar(length: number, width: number, depth: number, materi
   shape.absarc(x + r, y + depth - r, r, Math.PI / 2, Math.PI, false);
   shape.lineTo(x, y + r);
   shape.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
+  if (holeRadius > 0) {
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, holeRadius, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+  }
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false, curveSegments: 8 });
   geometry.translate(0, 0, -length / 2);
   geometry.applyMatrix4(new THREE.Matrix4().set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
@@ -87,7 +130,7 @@ export function silverBuckle(width: number, basis: number, depth: number, length
   const group = new THREE.Group();
   const { sleeveLen, sleeveW, gripSpan, gripStick } = buckleMetrics(width, basis * lengthScale);
   const metal = new THREE.MeshStandardMaterial({ color: BUCKLE_COLOR, metalness: 0.04, roughness: 0.38 });
-  const sleeve = straightBar(sleeveLen, sleeveW, depth * 1.2, metal);
+  const sleeve = straightBar(sleeveLen, sleeveW, depth * 1.2, metal, SHAFT_RADIUS);
   sleeve.position.z = 0.03;
   sleeve.castShadow = false;
   sleeve.userData.noShadow = true;
@@ -111,10 +154,7 @@ export function silverBuckle(width: number, basis: number, depth: number, length
  * `bend` is the centerline radius of an elbow. `width` is the finished shaft width.
  */
 export const SCREW = {
-  /**
-   * Nut hole diameter. Shaft core is a little under this.
-   * Thread crests are this divided by 0.83, the coarse-metric minor-to-major ratio.
-   */
+  /** Shaft core diameter. The hole and the contact radius are the thread crest, not this. */
   width: 0.14,
   /** Round flange radius. Straight screws only. */
   head: 0.19,
@@ -128,6 +168,15 @@ export const SCREW = {
 
 /** One thread turn along the shaft. Same pitch the helix uses. */
 export const THREAD_PITCH = (SCREW.width / 2) * 0.9;
+
+/** Core cylinder radius. The helix is raised around this. */
+export const SHAFT_CORE = SCREW.width / 2;
+/** Coil center, as a share of the core radius. Same numbers `addThreads` uses. */
+const THREAD_COIL = 0.72;
+/** Thread tube radius, as a share of the core radius. */
+const THREAD_TUBE = 0.36;
+/** Outermost metal of the rod. Hole, bend, and contact all use this. */
+export const SHAFT_RADIUS = SHAFT_CORE * (THREAD_COIL + THREAD_TUBE);
 
 export const NUT_COLORS = [0x3498db, 0x2ecc71, 0xf4d03f, 0xe74c3c] as const;
 
@@ -236,31 +285,23 @@ export function screwLocalBounds(kind: ScrewKind): { minX: number; minY: number;
 }
 
 const shaftAxis = new THREE.Vector3();
-const shaftUp = new THREE.Vector3(0, 1, 0);
 const torusAxis = new THREE.Vector3(0, 0, 1);
 
-function addRod(group: THREE.Group, x0: number, y0: number, x1: number, y1: number, radius: number, material: THREE.Material): void {
-  shaftAxis.set(x1 - x0, y1 - y0, 0);
-  const length = shaftAxis.length();
-  if (length < 1e-4) return;
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 20), material);
-  mesh.quaternion.setFromUnitVectors(shaftUp, shaftAxis.multiplyScalar(1 / length));
-  mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
-  group.add(mesh);
+/** One tube for the whole centerline, bends included, so the elbow is the same rod. */
+function addSweptShaft(group: THREE.Group, samples: ScrewSample[], radius: number, material: THREE.Material, capStart: boolean): void {
+  if (samples.length < 2) return;
+  const points = samples.map((sample) => new THREE.Vector3(sample.x, sample.y, 0));
+  const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(12, points.length * 3), radius, 16, false), material));
+  const tip = samples[samples.length - 1];
+  addTip(group, tip.x, tip.y, radius, material);
+  if (capStart) addTip(group, samples[0].x, samples[0].y, radius, material);
 }
 
 function addTip(group: THREE.Group, x: number, y: number, radius: number, material: THREE.Material): void {
   const tip = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
   tip.position.set(x, y, 0);
   group.add(tip);
-}
-
-/** Quarter elbow. `rotationZ` turns the default +X→+Y arc onto the bend. */
-function addElbow(group: THREE.Group, cx: number, cy: number, rotationZ: number, radius: number, tube: number, material: THREE.Material): void {
-  const elbow = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 12, 18, Math.PI / 2), material);
-  elbow.position.set(cx, cy, 0);
-  elbow.rotation.z = rotationZ;
-  group.add(elbow);
 }
 
 const helixUp = new THREE.Vector3(0, 0, 1);
@@ -280,7 +321,7 @@ function addThreads(group: THREE.Group, x0: number, y0: number, x1: number, y1: 
   if (span < pitch) return;
   const turns = span / pitch;
   const steps = Math.max(16, Math.ceil(turns * 16));
-  const coil = radius * 0.72;
+  const coil = radius * THREAD_COIL;
   const points: THREE.Vector3[] = [];
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
@@ -293,7 +334,7 @@ function addThreads(group: THREE.Group, x0: number, y0: number, x1: number, y1: 
     ));
   }
   const curve = new THREE.CatmullRomCurve3(points);
-  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, steps, radius * 0.36, 5, false), material));
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, steps, radius * THREAD_TUBE, 5, false), material));
 }
 
 /** Eight-sided head. Local +Z is the bolt axis, same as a nut. Shaft leaves one face. */
@@ -308,7 +349,7 @@ function headGeometry(depth: number): THREE.ExtrudeGeometry {
   }
   shape.closePath();
   const hole = new THREE.Path();
-  hole.absarc(0, 0, SCREW.width / 2, 0, Math.PI * 2, true);
+  hole.absarc(0, 0, SHAFT_RADIUS, 0, Math.PI * 2, true);
   shape.holes.push(hole);
   const cap = screwCap(depth);
   const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -335,7 +376,7 @@ function nutGeometry(depth: number): THREE.ExtrudeGeometry {
   }
   shape.closePath();
   const hole = new THREE.Path();
-  hole.absarc(0, 0, SCREW.width / 2, 0, Math.PI * 2, true);
+  hole.absarc(0, 0, SHAFT_RADIUS, 0, Math.PI * 2, true);
   shape.holes.push(hole);
   const cap = screwCap(depth);
   const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -348,6 +389,50 @@ function nutGeometry(depth: number): THREE.ExtrudeGeometry {
   });
   geometry.translate(0, 0, -cap.half);
   return geometry;
+}
+
+let headOutline: { halfAlong: number; halfAcross: number; shift: number } | null = null;
+
+/** Top-view box of the octagon head. Same bevel shift as a nut. The head does not spin. */
+export function headSilhouette(): { halfAlong: number; halfAcross: number; shift: number } {
+  if (headOutline) return headOutline;
+  const cap = screwCap(PART.depth * PART.scale);
+  const position = headGeometry(PART.depth * PART.scale).getAttribute('position');
+  let halfAcross = 0;
+  for (let i = 0; i < position.count; i += 1) halfAcross = Math.max(halfAcross, Math.abs(position.getY(i)));
+  headOutline = { halfAlong: cap.half, halfAcross, shift: -cap.bevel };
+  return headOutline;
+}
+
+let nutLocalXY: Float32Array | null = null;
+
+function nutPoints(): Float32Array {
+  if (nutLocalXY) return nutLocalXY;
+  const position = nutGeometry(PART.depth * PART.scale).getAttribute('position');
+  const xy = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i += 1) {
+    xy[i * 2] = position.getX(i);
+    xy[i * 2 + 1] = position.getY(i);
+  }
+  nutLocalXY = xy;
+  return xy;
+}
+
+/**
+ * Top-view box of the nut mesh. The extrude is centered `bevel` back along the bolt,
+ * and the bevel makes the across-width change as the octagon spins.
+ */
+export function nutSilhouette(spin: number): { halfAlong: number; halfAcross: number; shift: number } {
+  const cap = screwCap(PART.depth * PART.scale);
+  const points = nutPoints();
+  const sine = Math.sin(spin);
+  const cosine = Math.cos(spin);
+  let halfAcross = 0;
+  for (let i = 0; i < points.length; i += 2) {
+    const across = Math.abs(points[i] * sine + points[i + 1] * cosine);
+    if (across > halfAcross) halfAcross = across;
+  }
+  return { halfAlong: cap.half, halfAcross, shift: -cap.bevel };
 }
 
 /** One straight run that can hold nuts. `t` is the distance from the dead end toward the open tip. */
@@ -370,6 +455,10 @@ export type ScrewLayout = {
 
 const NUT_AXIAL = SCREW_CAP_HALF;
 
+function sleeveHalfLen(): number {
+  return buckleMetrics(SCREW.width, SCREW.straight * BUCKLE_LENGTH_SCALE).sleeveLen / 2;
+}
+
 function runStations(length: number, count: number, insetDead: number, insetTip: number): number[] {
   const usable = length - insetDead - insetTip;
   if (count < 1 || usable <= 0) return [];
@@ -383,10 +472,12 @@ function runStations(length: number, count: number, insetDead: number, insetTip:
 export function screwLayout(kind: ScrewKind): ScrewLayout {
   const r = SCREW.bend;
   const leg = SCREW.leg;
+  const sleeveHalf = sleeveHalfLen();
   if (kind === 'straight') {
+    const buckleX = SCREW_CAP_HALF + sleeveHalf;
     return {
       head: true,
-      buckles: [{ x: 0.19, y: 0 }],
+      buckles: [{ x: buckleX, y: 0 }],
       runs: [
         {
           x0: 0,
@@ -394,16 +485,17 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
           x1: SCREW.straight,
           y1: 0,
           stations: runStations(SCREW.straight, 3, 0.17, SCREW.nut * 0.7),
-          minT: 0.19 + 0.08 + NUT_AXIAL,
+          minT: buckleX + sleeveHalf + NUT_AXIAL,
         },
       ],
     };
   }
   if (kind === 'l') {
     const span = r + leg;
+    const buckleX = SHAFT_RADIUS + sleeveHalf;
     return {
       head: false,
-      buckles: [{ x: 0.175, y: -r }],
+      buckles: [{ x: buckleX, y: -r }],
       runs: [
         {
           x0: 0,
@@ -411,7 +503,7 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
           x1: span,
           y1: -r,
           stations: runStations(span, 2, r * 0.55, SCREW.nut * 0.65),
-          minT: 0.175 + 0.08 + NUT_AXIAL,
+          minT: buckleX + sleeveHalf + NUT_AXIAL,
         },
         {
           x0: -r,
@@ -419,17 +511,18 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
           x1: -r,
           y1: leg,
           stations: runStations(leg, 1, r * 0.55, SCREW.nut * 0.65),
-          minT: r * 0.55,
+          minT: NUT_AXIAL,
         },
       ],
     };
   }
   const pitch = SCREW.span + r * 2;
+  const buckleY = SHAFT_RADIUS + sleeveHalf;
   return {
     head: false,
     buckles: [
-      { x: 0, y: 0.2 },
-      { x: pitch, y: 0.2 },
+      { x: 0, y: buckleY },
+      { x: pitch, y: buckleY },
     ],
     runs: [0, pitch].map((x) => ({
       x0: x,
@@ -437,7 +530,7 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
       x1: x,
       y1: leg,
       stations: runStations(leg, 2, 0.2, SCREW.nut * 0.65),
-      minT: 0.2 + 0.08 + NUT_AXIAL,
+      minT: buckleY + sleeveHalf + NUT_AXIAL,
     })),
   };
 }
@@ -454,64 +547,48 @@ export function aimNut(mesh: THREE.Object3D, dx: number, dy: number): void {
   mesh.quaternion.setFromUnitVectors(torusAxis, shaftAxis);
 }
 
-export function screwMesh(kind: ScrewKind, depth: number, color: number): THREE.Group {
+export function screwMesh(kind: ScrewKind, depth: number, color: number, buckles?: { x: number; y: number }[]): THREE.Group {
   void color;
   const group = new THREE.Group();
   const body = new THREE.Group();
   body.scale.z = 0.35;
   group.add(body);
   const metal = new THREE.MeshStandardMaterial({ color: 0x9aa3a8, metalness: 0.22, roughness: 0.62 });
-  const thread = metal;
-  const hole = SCREW.width / 2;
-  const radius = hole;
-  const crest = hole;
+  const radius = SHAFT_CORE;
   const r = SCREW.bend;
   const leg = SCREW.leg;
+  const layout = screwLayout(kind);
+  const seats = buckles ?? layout.buckles;
+  const placeBuckle = (x: number, y: number, rotationZ = 0) => {
+    const buckle = silverBuckle(SCREW.width, SCREW.straight, depth, BUCKLE_LENGTH_SCALE);
+    buckle.position.set(x, y, 0);
+    buckle.rotation.z = rotationZ;
+    buckle.userData.buckle = true;
+    group.add(buckle);
+  };
   if (kind === 'straight') {
     const headLength = screwCap(depth).length;
-    addRod(body, headLength / 2, 0, SCREW.straight, 0, radius, metal);
-    addThreads(body, headLength / 2, 0, SCREW.straight, 0, crest, thread);
-    addTip(body, SCREW.straight, 0, radius, metal);
+    const samples: ScrewSample[] = [];
+    pushLine(samples, headLength / 2, 0, SCREW.straight, 0, 24);
+    addSweptShaft(body, samples, radius, metal, false);
+    addThreads(body, headLength / 2, 0, SCREW.straight, 0, radius, metal);
     const head = new THREE.Mesh(headGeometry(depth), metal);
     head.quaternion.setFromUnitVectors(torusAxis, new THREE.Vector3(1, 0, 0));
     group.add(head);
-    const straightBuckle = silverBuckle(SCREW.width, SCREW.straight, depth, BUCKLE_LENGTH_SCALE);
-    straightBuckle.position.set(0.19, 0, 0);
-    straightBuckle.userData.buckle = true;
-    group.add(straightBuckle);
+    placeBuckle(seats[0].x, seats[0].y);
     return group;
   }
   if (kind === 'l') {
-    addRod(body, r + leg, -r, 0, -r, radius, metal);
-    addThreads(body, r + leg, -r, 0, -r, crest, thread);
-    addTip(body, r + leg, -r, radius, metal);
-    addElbow(body, 0, 0, Math.PI, r, radius, metal);
-    addRod(body, -r, 0, -r, leg, radius, metal);
-    addThreads(body, -r, 0, -r, leg, crest, thread);
-    addTip(body, -r, leg, radius, metal);
-    const lBuckle = silverBuckle(SCREW.width, SCREW.straight, depth, BUCKLE_LENGTH_SCALE);
-    lBuckle.position.set(0.175, -r, 0);
-    lBuckle.userData.buckle = true;
-    group.add(lBuckle);
+    addSweptShaft(body, lCenter(), radius, metal, true);
+    addThreads(body, r + leg, -r, 0, -r, radius, metal);
+    addThreads(body, -r, 0, -r, leg, radius, metal);
+    placeBuckle(seats[0].x, seats[0].y);
     return group;
   }
   const span = SCREW.span;
-  addRod(body, 0, leg, 0, 0, radius, metal);
-  addThreads(body, 0, leg, 0, 0, crest, thread);
-  addTip(body, 0, leg, radius, metal);
-  addElbow(body, r, 0, Math.PI, r, radius, metal);
-  addRod(body, r, -r, r + span, -r, radius, metal);
-  const uBuckleY = 0.2;
-  for (const x of [0, span + r * 2]) {
-    const uBuckle = silverBuckle(SCREW.width, SCREW.straight, depth, BUCKLE_LENGTH_SCALE);
-    uBuckle.position.set(x, uBuckleY, 0);
-    uBuckle.rotation.z = Math.PI / 2;
-    uBuckle.userData.buckle = true;
-    group.add(uBuckle);
-  }
-  addElbow(body, r + span, 0, -Math.PI / 2, r, radius, metal);
-  addRod(body, span + r * 2, 0, span + r * 2, leg, radius, metal);
-  addThreads(body, span + r * 2, 0, span + r * 2, leg, crest, thread);
-  addTip(body, span + r * 2, leg, radius, metal);
+  addSweptShaft(body, uCenter(), radius, metal, true);
+  addThreads(body, 0, leg, 0, 0, radius, metal);
+  addThreads(body, span + r * 2, 0, span + r * 2, leg, radius, metal);
+  for (const buckle of seats) placeBuckle(buckle.x, buckle.y, Math.PI / 2);
   return group;
 }

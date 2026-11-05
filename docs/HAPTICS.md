@@ -211,7 +211,7 @@ npm run cap:open
 
 试玩只在 `src/game/play.ts` 里发震：按下、撞上、解开。不另建 `gameHaptics`，也不在 `main.ts` 里散落调用。都是 `void`，不 `await`。
 
-四次都走 `playTransient`。强度和锐度的默认值在 `src/game/hapticFeel.ts`。试玩页右上角齿轮可以改，滑杆上显示两位小数，下一次该事件用新数值。关卡编辑页没有这颗齿轮。面板在 `#haptic-panel` 里滚动，这里的 `touchmove` 不拦截，见 [ENGINEERING.md](./ENGINEERING.md) §5b。改过的数记在本机 `localStorage`（`rings.haptic-feel`）。没有存过的一档用默认值。点「恢复默认」清掉本机记录。无效晃动只留画面，不进这张表。原生侧同一组强度和锐度复用已经做好的短震。引擎被系统停掉后立刻再打开，避免下一次点击赶上启动。
+齿轮有四档，都走 `playTransient`。强度和锐度的默认值在 `src/game/hapticFeel.ts`。试玩现在发按下、撞上、解开。滑杆上显示两位小数，下一次该事件用新数值。面板在 `#haptic-panel` 里滚动，这里的 `touchmove` 不拦截，见 [ENGINEERING.md](./ENGINEERING.md) §5b。改过的数记在本机 `localStorage`（`rings.haptic-feel`）。没有存过的一档用默认值。点「恢复默认」清掉本机记录。原生侧同一组强度和锐度复用已经做好的短震。引擎被系统停掉后立刻再打开，避免下一次点击赶上启动。
 
 | 画面 | 默认强度 / 锐度 |
 |------|----------------|
