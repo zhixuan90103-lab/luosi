@@ -747,8 +747,8 @@ export function slideScrew(
 
 /**
  * How far along `sign` this screw must slide to leave its own buckles.
- * Null when it is already clear, the finger reversed, or something else
- * still blocks inside `pad`. The screw is put back where it started.
+ * Looks only as far as `pad`. A blocker before that exit returns null.
+ * Something past the exit does not cancel it. The screw is put back.
  */
 export function releaseSlack(
   screws: ScrewBody[],
@@ -771,13 +771,22 @@ export function releaseSlack(
     place(travel);
     return !poseBlocked(screw, nuts, screws);
   };
-  if (!free(pad)) {
+  const step = 0.02;
+  let lo = 0;
+  let hi = -1;
+  for (let travel = step; travel <= pad + 1e-6; travel += step) {
+    const at = Math.min(travel, pad);
+    if (free(at)) {
+      hi = at;
+      break;
+    }
+    lo = at;
+  }
+  if (hi < 0) {
     place(0);
     return null;
   }
-  let lo = 0;
-  let hi = pad;
-  for (let step = 0; step < 16; step += 1) {
+  for (let i = 0; i < 16 && hi - lo > 1e-4; i += 1) {
     const mid = (lo + hi) / 2;
     if (free(mid)) hi = mid;
     else lo = mid;

@@ -16,6 +16,12 @@ export const INTENT_TREND = INTENT_CLEAR;
 export const INTENT_FINGER = 18 / DESIGN_WIDTH;
 /** On release only. Dragging still stops on the real outline. */
 export const INTENT_SLEEVE = 0.05;
+/** Release look-ahead when the last 100 ms along the shaft is a flick. */
+export const INTENT_FLICK = 0.20;
+/** Design pixels per second. At or above this, release uses `INTENT_FLICK`. */
+export const INTENT_FLICK_SPEED = 250;
+/** Samples used to read the release. */
+export const RELEASE_WINDOW_MS = 100;
 /** The winning axis must beat the other by this much. */
 export const INTENT_AXIS = 1.5;
 /** |cross| of the two slide axes below this means a stroke cannot separate them. */
@@ -23,6 +29,49 @@ export const INTENT_PARALLEL = 0.35;
 
 export function intentWorld(fraction: number, zoom: number): number {
   return (fraction * DESIGN_WIDTH * VIEW_H) / DESIGN_HEIGHT / Math.max(zoom, 1e-4);
+}
+
+export type StrokeSample = { t: number; x: number; y: number };
+
+/** Keep the newest samples, plus one at or before the release window. */
+export function rememberStroke(samples: StrokeSample[], sample: StrokeSample): void {
+  samples.push(sample);
+  const edge = sample.t - RELEASE_WINDOW_MS;
+  while (samples.length > 2 && samples[1].t < edge) samples.shift();
+}
+
+/**
+ * Along-axis motion in the release window.
+ * Null when that window is empty, or its direction opposes the drag.
+ * `speed` is design pixels per second.
+ */
+export function releaseFlick(
+  samples: readonly StrokeSample[],
+  axis: { x: number; y: number },
+  dragSign: number,
+  zoom: number,
+  now: number,
+): { sign: number; speed: number } | null {
+  if (dragSign === 0 || samples.length < 2) return null;
+  const latest = samples[samples.length - 1];
+  if (now - latest.t > RELEASE_WINDOW_MS) return null;
+  const edge = now - RELEASE_WINDOW_MS;
+  let prev = samples[0];
+  for (const sample of samples) {
+    if (sample.t <= edge) prev = sample;
+  }
+  const dt = (latest.t - prev.t) / 1000;
+  if (dt <= 1e-4) return null;
+  const along = (latest.x - prev.x) * axis.x + (latest.y - prev.y) * axis.y;
+  if (Math.sign(along) !== dragSign) return null;
+  const worldPerSec = Math.abs(along) / dt;
+  const speed = (worldPerSec * DESIGN_HEIGHT * zoom) / VIEW_H;
+  return { sign: dragSign, speed };
+}
+
+/** Slow releases stay at `INTENT_SLEEVE`. A flick uses `INTENT_FLICK` and no more. */
+export function releasePad(speed: number): number {
+  return speed >= INTENT_FLICK_SPEED ? INTENT_FLICK : INTENT_SLEEVE;
 }
 
 export function axesParallel(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
