@@ -13,8 +13,9 @@ import { dragScrew, nutAxis, nutPastTip, nutSpin, nutWorld, piecesNear, releaseS
 import type { Board } from './board';
 import { contactLatch, mountFeedback, stepContact } from './feedback';
 import { pulseHaptic } from './hapticFeel';
-import { INTENT_FINGER, INTENT_TREND, intentWorld, moveAim, pressAim, releaseFlick, releasePad, rememberStroke, type Aim, type AimPiece, type StrokeSample } from './intent';
+import { INTENT_CLEAR, INTENT_FINGER, intentWorld, moveAim, pressAim, releaseFlick, releasePad, rememberStroke, type Aim, type AimPiece, type StrokeSample } from './intent';
 import { onStageZoom, stageZoomValue, viewSize, worldFromDesign } from './camera';
+import { releaseFinish } from './finish';
 
 export type PlayHandles = {
   resize: () => void;
@@ -33,7 +34,10 @@ function disposeObject(object: THREE.Object3D): void {
       for (const material of list) materials.add(material);
     }
   });
-  for (const material of materials) material.dispose();
+  for (const material of materials) {
+    releaseFinish(material);
+    material.dispose();
+  }
 }
 
 export function mountPlay(options: {
@@ -366,7 +370,7 @@ export function mountPlay(options: {
     const world = worldFromEvent(event);
     if (!world) return;
     if (aim.phase !== 'off') {
-      const stepped = moveAim(aim, aimPieces(world), world.x, world.y, intentWorld(INTENT_TREND, camera.zoom));
+      const stepped = moveAim(aim, aimPieces(world), world.x, world.y, intentWorld(INTENT_CLEAR, camera.zoom));
       aim = stepped.aim;
       if (stepped.lock) lockAim(stepped.lock, world);
     }

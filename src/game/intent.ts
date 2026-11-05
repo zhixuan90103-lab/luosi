@@ -1,20 +1,31 @@
 /**
- * Feel distances and which piece a press means.
- * Contact outlines stay in `screws.ts`. Nothing here shrinks a head, nut, or buckle.
- * One piece locks immediately. Two pieces whose slide axes differ wait for a
- * short stroke, then follow the axis the finger moved along.
+ * Two decisions, both after the finger has already touched the screen.
+ * Contact outlines stay in `screws.ts`. Nothing here grows a head, nut, or buckle.
+ *
+ * Acquire. The finger radius only lists candidates. A press on one candidate
+ * locks it. A press on none stays open: the first candidate is watched until
+ * the point enters its outline. Two or more candidates wait for an outline
+ * or for one slide axis to lead. A nut on the screw under the point wins over
+ * that screw. After a lock the caller stops calling.
+ *
+ * Release. Only a screw, and only on finger-up. The last 100 ms along the
+ * shaft picks the pad: slow keeps a short look-ahead, a flick uses a longer
+ * one. `screws.ts` then slides to the first pose that has left its buckle.
  */
 
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../adapt/design';
 import { VIEW_H } from './camera';
 
-/** Along-axis travel, as a fraction of design width, before a gap between pieces may choose. */
+/** Gap travel, as a fraction of design width, before one axis may name a piece. */
 export const INTENT_CLEAR = 8 / DESIGN_WIDTH;
-/** Same distance as `INTENT_CLEAR`. The gap stroke that names a piece. */
-export const INTENT_TREND = INTENT_CLEAR;
-/** Finger radius on press and while a stroke is still choosing, as a fraction of design width. */
+/** Finger radius while a stroke is still choosing, as a fraction of design width. */
 export const INTENT_FINGER = 18 / DESIGN_WIDTH;
-/** On release only. Dragging still stops on the real outline. */
+/** The winning axis must beat the other by this much. */
+export const INTENT_AXIS = 1.5;
+/** |cross| of two slide axes below this means a stroke cannot separate them. */
+export const INTENT_PARALLEL = 0.35;
+
+/** Short release look-ahead. Dragging still stops on the real outline. */
 export const INTENT_SLEEVE = 0.05;
 /** Release look-ahead when the last 100 ms along the shaft is a flick. */
 export const INTENT_FLICK = 0.20;
@@ -22,13 +33,13 @@ export const INTENT_FLICK = 0.20;
 export const INTENT_FLICK_SPEED = 250;
 /** Samples used to read the release. */
 export const RELEASE_WINDOW_MS = 100;
-/** The winning axis must beat the other by this much. */
-export const INTENT_AXIS = 1.5;
-/** |cross| of the two slide axes below this means a stroke cannot separate them. */
-export const INTENT_PARALLEL = 0.35;
 
 export function intentWorld(fraction: number, zoom: number): number {
   return (fraction * DESIGN_WIDTH * VIEW_H) / DESIGN_HEIGHT / Math.max(zoom, 1e-4);
+}
+
+export function axesParallel(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+  return Math.abs(a.x * b.y - a.y * b.x) < INTENT_PARALLEL;
 }
 
 export type StrokeSample = { t: number; x: number; y: number };
@@ -42,7 +53,7 @@ export function rememberStroke(samples: StrokeSample[], sample: StrokeSample): v
 
 /**
  * Along-axis motion in the release window.
- * Null when that window is empty, or its direction opposes the drag.
+ * Null when that window has no motion, or its direction opposes the drag.
  * `speed` is design pixels per second.
  */
 export function releaseFlick(
@@ -74,26 +85,6 @@ export function releasePad(speed: number): number {
   return speed >= INTENT_FLICK_SPEED ? INTENT_FLICK : INTENT_SLEEVE;
 }
 
-export function axesParallel(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
-  return Math.abs(a.x * b.y - a.y * b.x) < INTENT_PARALLEL;
-}
-
-/** Null until the stroke is long enough and one axis clearly leads. */
-export function strokeChoice(
-  nutAxis: { x: number; y: number },
-  screwAxis: { x: number; y: number },
-  dx: number,
-  dy: number,
-  clearAt: number,
-): 'nut' | 'screw' | null {
-  const alongNut = Math.abs(dx * nutAxis.x + dy * nutAxis.y);
-  const alongScrew = Math.abs(dx * screwAxis.x + dy * screwAxis.y);
-  if (Math.max(alongNut, alongScrew) < clearAt) return null;
-  if (alongNut >= alongScrew * INTENT_AXIS) return 'nut';
-  if (alongScrew >= alongNut * INTENT_AXIS) return 'screw';
-  return null;
-}
-
 export type AimPiece = {
   kind: 'nut' | 'screw';
   id: string;
@@ -106,12 +97,14 @@ export type AimPiece = {
   distance: number;
 };
 
-/** `open` has not reached a piece. `watch` is the first piece in range, not locked. `choose` has two or more. */
+/** `open` has not reached a piece. `watch` is one piece, not locked. `choose` has two or more. */
 export type Aim =
   | { phase: 'off' }
   | { phase: 'open'; x: number; y: number }
   | { phase: 'watch'; x: number; y: number; kind: 'nut' | 'screw'; id: string }
   | { phase: 'choose'; x: number; y: number };
+
+type AimStep = { aim: Aim; lock: AimPiece | null };
 
 function samePiece(piece: AimPiece, kind: 'nut' | 'screw', id: string): boolean {
   return piece.kind === kind && piece.id === id;
@@ -134,8 +127,8 @@ function nutsOnScrew(pieces: AimPiece[], screw: AimPiece): AimPiece[] {
 
 /**
  * One outline under the point locks.
- * A shaft with its own nut still in the finger radius locks that nut.
- * The point lands on the rod beside the nut more often than on the nut's slab.
+ * A shaft with its own nut still in range locks that nut: the point lands
+ * on the rod beside the nut more often than on the nut's slab.
  */
 function outlineLock(pieces: AimPiece[]): AimPiece | null {
   const inside = pieces.filter((piece) => piece.inside);
@@ -170,48 +163,51 @@ function trendLock(pieces: AimPiece[], dx: number, dy: number, clearAt: number):
   return best.pieces[0];
 }
 
-function chooseLock(pieces: AimPiece[], x0: number, y0: number, x: number, y: number, clearAt: number): AimPiece | null {
-  return outlineLock(pieces) ?? trendLock(pieces, x - x0, y - y0, clearAt);
+function locked(piece: AimPiece): AimStep {
+  return { aim: { phase: 'off' }, lock: piece };
 }
 
-/** A press on exactly one piece locks. Two or more wait. None stays open. */
-export function pressAim(pieces: AimPiece[], x: number, y: number): { aim: Aim; lock: AimPiece | null } {
+function held(aim: Aim): AimStep {
+  return { aim, lock: null };
+}
+
+function watch(origin: { x: number; y: number }, piece: AimPiece): AimStep {
+  return { aim: { phase: 'watch', x: origin.x, y: origin.y, kind: piece.kind, id: piece.id }, lock: null };
+}
+
+/** Several candidates: an outline first, otherwise the leading axis. */
+function choose(origin: { x: number; y: number }, pieces: AimPiece[], x: number, y: number, clearAt: number): AimStep {
+  const piece = outlineLock(pieces) ?? trendLock(pieces, x - origin.x, y - origin.y, clearAt);
+  if (piece) return locked(piece);
+  return held({ phase: 'choose', x: origin.x, y: origin.y });
+}
+
+/** One candidate locks on press. During a slide it locks only once the outline is entered. */
+function one(origin: { x: number; y: number }, piece: AimPiece, enterOutline: boolean): AimStep {
+  if (!enterOutline || piece.inside) return locked(piece);
+  return watch(origin, piece);
+}
+
+/** A press on one candidate locks. None stays open. Two or more use `choose`. */
+export function pressAim(pieces: AimPiece[], x: number, y: number): AimStep {
   const outlined = outlineLock(pieces);
-  if (pieces.length === 0) return { aim: { phase: 'open', x, y }, lock: null };
-  if (pieces.length === 1 || outlined) return { aim: { phase: 'off' }, lock: outlined ?? pieces[0] };
-  return { aim: { phase: 'choose', x, y }, lock: null };
+  if (pieces.length === 0) return held({ phase: 'open', x, y });
+  if (pieces.length === 1 || outlined) return locked(outlined ?? pieces[0]);
+  return held({ phase: 'choose', x, y });
 }
 
 /**
- * Empty travel does not lock. The first piece in range is watched until its outline
- * is entered. A second piece switches to the gap rules. Dropping back to one piece
- * does not lock. After a lock the caller stops calling this.
+ * Empty travel does not lock. The first piece in range is watched until its
+ * outline is entered. A second piece uses `choose`. Dropping back to one
+ * piece does not lock. After a lock the caller stops calling this.
  */
-export function moveAim(aim: Aim, pieces: AimPiece[], x: number, y: number, clearAt: number): { aim: Aim; lock: AimPiece | null } {
-  if (aim.phase === 'off') return { aim, lock: null };
-  if (aim.phase === 'open') {
-    if (pieces.length === 0) return { aim, lock: null };
-    if (pieces.length === 1) {
-      if (pieces[0].inside) return { aim: { phase: 'off' }, lock: pieces[0] };
-      return { aim: { phase: 'watch', x: aim.x, y: aim.y, kind: pieces[0].kind, id: pieces[0].id }, lock: null };
-    }
-    const lock = chooseLock(pieces, aim.x, aim.y, x, y, clearAt);
-    return { aim: lock ? { phase: 'off' } : { phase: 'choose', x: aim.x, y: aim.y }, lock };
-  }
-  if (aim.phase === 'watch') {
-    if (pieces.length === 0) return { aim: { phase: 'open', x: aim.x, y: aim.y }, lock: null };
-    if (pieces.length === 1) {
-      const piece = pieces[0];
-      if (!samePiece(piece, aim.kind, aim.id)) {
-        if (piece.inside) return { aim: { phase: 'off' }, lock: piece };
-        return { aim: { phase: 'watch', x: aim.x, y: aim.y, kind: piece.kind, id: piece.id }, lock: null };
-      }
-      if (piece.inside) return { aim: { phase: 'off' }, lock: piece };
-      return { aim, lock: null };
-    }
-    const lock = chooseLock(pieces, aim.x, aim.y, x, y, clearAt);
-    return { aim: lock ? { phase: 'off' } : { phase: 'choose', x: aim.x, y: aim.y }, lock };
-  }
-  const lock = chooseLock(pieces, aim.x, aim.y, x, y, clearAt);
-  return { aim: lock ? { phase: 'off' } : aim, lock };
+export function moveAim(aim: Aim, pieces: AimPiece[], x: number, y: number, clearAt: number): AimStep {
+  if (aim.phase === 'off') return held(aim);
+  const origin = aim;
+  if (aim.phase === 'choose') return choose(origin, pieces, x, y, clearAt);
+  if (pieces.length >= 2) return choose(origin, pieces, x, y, clearAt);
+  if (pieces.length === 0) return held({ phase: 'open', x: origin.x, y: origin.y });
+  const piece = pieces[0];
+  if (aim.phase === 'watch' && samePiece(piece, aim.kind, aim.id) && !piece.inside) return held(aim);
+  return one(origin, piece, true);
 }

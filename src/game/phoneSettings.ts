@@ -1,4 +1,5 @@
 import { setStageZoom, stageZoomValue } from './camera';
+import { finishOf, resetFinish, setFinish, type FinishKind } from './finish';
 import { hapticFeel, hapticLabel, resetHapticFeel, setHapticPair, type HapticKind } from './hapticFeel';
 
 /** Phone gear: haptic test and the play intensities. Not the level editor. */
@@ -26,6 +27,11 @@ function fillTune(tune: HTMLElement): void {
   cameraTitle.className = 'panel-title';
   cameraTitle.textContent = '摄像机';
   tune.append(cameraTitle, zoomSlider());
+  const finishTitle = document.createElement('p');
+  finishTitle.className = 'panel-title';
+  finishTitle.textContent = '光泽';
+  tune.append(finishTitle);
+  for (const kind of ['screw', 'nut', 'buckle'] as FinishKind[]) tune.append(finishRow(kind));
   const title = document.createElement('p');
   title.className = 'panel-title';
   title.textContent = '试玩震动';
@@ -36,6 +42,7 @@ function fillTune(tune: HTMLElement): void {
   reset.textContent = '恢复默认';
   reset.addEventListener('click', () => {
     resetHapticFeel();
+    resetFinish();
     fillTune(tune);
   });
   tune.append(reset);
@@ -58,6 +65,51 @@ function zoomSlider(): HTMLLabelElement {
   input.addEventListener('input', () => {
     show();
     setStageZoom(Number(input.value));
+  });
+  node.append(caption, input);
+  return node;
+}
+
+const finishName: Record<FinishKind, string> = {
+  screw: '螺丝',
+  nut: '螺丝扣',
+  buckle: '银卡扣',
+};
+
+function finishRow(kind: FinishKind): HTMLDivElement {
+  const pair = finishOf(kind);
+  const line = document.createElement('div');
+  line.className = 'haptic-row';
+  const head = document.createElement('div');
+  head.className = 'haptic-head';
+  const name = document.createElement('span');
+  name.textContent = finishName[kind];
+  head.append(name);
+  line.append(head, unitSlider('粗糙', pair.roughness, (value) => {
+    setFinish(kind, { roughness: value });
+  }), unitSlider('金属', pair.metalness, (value) => {
+    setFinish(kind, { metalness: value });
+  }));
+  return line;
+}
+
+function unitSlider(label: string, value: number, onInput: (value: number) => void): HTMLLabelElement {
+  const node = document.createElement('label');
+  node.className = 'editor-slider';
+  const caption = document.createElement('span');
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = '0';
+  input.max = '1';
+  input.step = '0.01';
+  input.value = String(value);
+  const show = () => {
+    caption.textContent = `${label} ${Number(input.value).toFixed(2)}`;
+  };
+  show();
+  input.addEventListener('input', () => {
+    show();
+    onInput(Number(input.value));
   });
   node.append(caption, input);
   return node;

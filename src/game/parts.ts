@@ -4,6 +4,7 @@
  */
 
 import * as THREE from 'three';
+import { metalMaterial } from './finish';
 
 export const PART = {
   outer: 0.72,
@@ -129,7 +130,7 @@ function fakeShadow(length: number, width: number, x: number, y: number): THREE.
 export function silverBuckle(width: number, basis: number, depth: number, lengthScale = 1): THREE.Group {
   const group = new THREE.Group();
   const { sleeveLen, sleeveW, gripSpan, gripStick } = buckleMetrics(width, basis * lengthScale);
-  const metal = new THREE.MeshStandardMaterial({ color: BUCKLE_COLOR, metalness: 0.04, roughness: 0.38 });
+  const metal = metalMaterial(BUCKLE_COLOR, 'buckle');
   const sleeve = straightBar(sleeveLen, sleeveW, depth * 1.2, metal, SHAFT_RADIUS + THREAD_HOLE_GAP);
   sleeve.position.z = 0.03;
   sleeve.castShadow = false;
@@ -722,7 +723,7 @@ export function authoredLayout(kind: ScrewKind, edges: readonly number[], buckle
 }
 
 export function nutMesh(depth: number, color: number): THREE.Mesh {
-  return new THREE.Mesh(nutGeometry(depth), new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.12 }));
+  return new THREE.Mesh(nutGeometry(depth), metalMaterial(color, 'nut'));
 }
 
 /** Point the nut's hole along a local shaft direction. */
@@ -744,7 +745,7 @@ export function screwMesh(
   const body = new THREE.Group();
   body.scale.z = 0.35;
   group.add(body);
-  const metal = new THREE.MeshStandardMaterial({ color, metalness: 0.12, roughness: 0.32 });
+  const metal = metalMaterial(color, 'screw');
   const radius = SHAFT_CORE;
   const layout = screwLayout(kind);
   const seats: { x: number; y: number; rot?: number }[] = buckles ?? layout.buckles;
