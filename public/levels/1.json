@@ -6,7 +6,7 @@
       "x": 0,
       "y": 0.878,
       "theta": -1.571,
-      "color": 3832789,
+      "color": 3844351,
       "edges": [
         1.361
       ],
@@ -21,35 +21,35 @@
       "screwId": "straight",
       "run": 0,
       "t": 0.395,
-      "color": 3447003
+      "color": 4050035
     },
     {
       "id": "straight:0:1",
       "screwId": "straight",
       "run": 0,
       "t": 0.816,
-      "color": 3066993
+      "color": 16733772
     },
     {
       "id": "straight:0:2",
       "screwId": "straight",
       "run": 0,
       "t": 1.238,
-      "color": 16044095
+      "color": 16747050
     },
     {
       "id": "nmw3a7ysx",
       "screwId": "straight",
       "run": 0,
       "t": 0.606,
-      "color": 6049243
+      "color": 11037695
     },
     {
       "id": "nmw3a7zvu",
       "screwId": "straight",
       "run": 0,
       "t": 1.027,
-      "color": 12720219
+      "color": 15909198
     }
   ]
 }

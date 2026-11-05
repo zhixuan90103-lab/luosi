@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { metalMaterial } from './finish';
 
+
 export const PART = {
   outer: 0.72,
   bandRatio: 0.28,
@@ -180,8 +181,6 @@ const THREAD_TUBE = 0.36;
 export const SHAFT_RADIUS = SHAFT_CORE * (THREAD_COIL + THREAD_TUBE);
 /** Mesh holes are this much wider than the crest so the decorative thread does not meet the wall. */
 const THREAD_HOLE_GAP = 0.008;
-
-export const NUT_COLORS = [0x3498db, 0x2ecc71, 0xf4d03f, 0xe74c3c] as const;
 
 export type ScrewKind = 'straight' | 'l' | 'u';
 

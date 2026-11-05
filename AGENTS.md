@@ -67,7 +67,7 @@ npm run ios
 
 ## 业务怎么加
 
-- 外形和中心线：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角、颜色不要跟着操作改  
+- 外形和中心线：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角不要跟着操作改。舞台、六色和一关里的配色在 `src/game/palette.ts`，规范在 `docs/SCREWS.md` 的颜色一节  
 - 拖动和阻挡：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡、离场、点选、补量、闪光或描边公式。直段和弯只从 `screwSpans` 读
 - 点选和松手补量改 `intent.ts`。轮廓距离和 `releaseSlack` 仍在 `screws.ts`。离场改 `fall.ts`，闪光改 `feedback.ts`，选中描边改 `outline.ts`。描边是 WebGPU 屏幕遮罩，跟实际网格走，不放大网格，不含银卡扣
 - 松手只读最后 100 毫秒。方向相反或这段没有沿杆移动，不补。慢于 250 设计像素/秒上限是 5%，达到则上限 20%。20% 不是保证脱离。拖的时候仍按真实接触停

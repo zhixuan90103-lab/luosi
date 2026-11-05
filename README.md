@@ -10,7 +10,7 @@
 | [docs/MERGE.md](./docs/MERGE.md) | 双工程优点对照与合并说明 |
 | [docs/AUDIO.md](./docs/AUDIO.md) | 音效方案（预解码 + 每帧一批 + 原生池） |
 | [docs/HAPTICS.md](./docs/HAPTICS.md) | 震动如何一次接对（插件注册 + 玩法层） |
-| [docs/SCREWS.md](./docs/SCREWS.md) | 螺丝扣拖动和卡扣阻挡 |
+| [docs/SCREWS.md](./docs/SCREWS.md) | 螺丝扣拖动、卡扣阻挡、配色 |
 | [docs/PARTS.md](./docs/PARTS.md) | 直、L、U 螺丝和银卡扣的尺寸 |
 
 ## 30 秒上手

@@ -6,7 +6,7 @@
       "x": -0.496,
       "y": 0.276,
       "theta": 0,
-      "color": 1756828,
+      "color": 3844351,
       "edges": [
         0.725
       ],
@@ -20,7 +20,7 @@
       "x": 0.496,
       "y": 0.779,
       "theta": -1.571,
-      "color": 15105570,
+      "color": 4050035,
       "edges": [
         0.902
       ],
@@ -35,28 +35,28 @@
       "screwId": "smw3al8ri",
       "run": 0,
       "t": 0.403,
-      "color": 10574895
+      "color": 4050035
     },
     {
       "id": "nmw3am2us",
       "screwId": "smw3al8ri",
       "run": 0,
       "t": 0.612,
-      "color": 15105570
+      "color": 16733772
     },
     {
       "id": "nmw3amaxl",
       "screwId": "smw3alcus",
       "run": 0,
       "t": 0.369,
-      "color": 12720219
+      "color": 3844351
     },
     {
       "id": "nmw3amcx1",
       "screwId": "smw3alcus",
       "run": 0,
       "t": 0.698,
-      "color": 3066993
+      "color": 16747050
     }
   ]
 }

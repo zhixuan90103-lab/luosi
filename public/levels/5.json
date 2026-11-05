@@ -6,7 +6,7 @@
       "x": 0.408,
       "y": -0.182,
       "theta": 1.571,
-      "color": 6049243,
+      "color": 3844351,
       "edges": [
         0.498,
         0.784
@@ -22,7 +22,7 @@
       "x": -0.045,
       "y": 0.502,
       "theta": -1.571,
-      "color": 15158332,
+      "color": 4050035,
       "edges": [
         0.649
       ],
@@ -36,7 +36,7 @@
       "x": 0.952,
       "y": 0.539,
       "theta": -1.571,
-      "color": 1756828,
+      "color": 16733772,
       "edges": [
         1.041
       ],
@@ -50,7 +50,7 @@
       "x": -0.992,
       "y": 0.028,
       "theta": 0,
-      "color": 3832789,
+      "color": 16747050,
       "edges": [
         1.171,
         0.246,
@@ -68,7 +68,7 @@
       "x": -0.585,
       "y": 0.836,
       "theta": 0,
-      "color": 3447003,
+      "color": 11037695,
       "edges": [
         1.369
       ],
@@ -83,105 +83,105 @@
       "screwId": "smw3bnhkg",
       "run": 1,
       "t": 0.332,
-      "color": 12720219
+      "color": 4050035
     },
     {
       "id": "nmw3bnz4n",
       "screwId": "smw3bnhkg",
       "run": 1,
       "t": 0.634,
-      "color": 9323693
+      "color": 16733772
     },
     {
       "id": "nmw3bo7vb",
       "screwId": "smw3bnhkg",
       "run": 0,
       "t": 0.166,
-      "color": 6049243
+      "color": 16747050
     },
     {
       "id": "nmw3bosqr",
       "screwId": "smw3bocqf",
       "run": 0,
       "t": 0.398,
-      "color": 15221651
+      "color": 3844351
     },
     {
       "id": "nmw3bpbt2",
       "screwId": "smw3bozdz",
       "run": 0,
       "t": 0.813,
-      "color": 15158332
+      "color": 11037695
     },
     {
       "id": "nmw3bpluw",
       "screwId": "smw3bozdz",
       "run": 0,
       "t": 0.422,
-      "color": 3447003
+      "color": 15909198
     },
     {
       "id": "nmw3brrzy",
       "screwId": "smw3bql1e",
       "run": 2,
       "t": 0.273,
-      "color": 3447003
+      "color": 3844351
     },
     {
       "id": "nmw3bs111",
       "screwId": "smw3bql1e",
       "run": 0,
       "t": 0.52,
-      "color": 15105570
+      "color": 4050035
     },
     {
       "id": "nmw3bs6eu",
       "screwId": "smw3bql1e",
       "run": 0,
       "t": 0.79,
-      "color": 3066993
+      "color": 16733772
     },
     {
       "id": "nmw3bs84n",
       "screwId": "smw3bql1e",
       "run": 0,
       "t": 1.044,
-      "color": 15221651
+      "color": 11037695
     },
     {
       "id": "nmw3c03eq",
       "screwId": "smw3bnhkg",
       "run": 0,
       "t": 0.541,
-      "color": 15105570
+      "color": 16747050
     },
     {
       "id": "nmw3c3il7",
       "screwId": "smw3c34zh",
       "run": 0,
       "t": 0.678,
-      "color": 15158332
+      "color": 15909198
     },
     {
       "id": "nmw3c3jcz",
       "screwId": "smw3c34zh",
       "run": 0,
       "t": 0.919,
-      "color": 3832789
+      "color": 3844351
     },
     {
       "id": "nmw3c3jxy",
       "screwId": "smw3c34zh",
       "run": 0,
       "t": 1.16,
-      "color": 3066993
+      "color": 4050035
     },
     {
       "id": "nmw3c3kr4",
       "screwId": "smw3c34zh",
       "run": 0,
       "t": 0.427,
-      "color": 16044095
+      "color": 16733772
     }
   ]
 }

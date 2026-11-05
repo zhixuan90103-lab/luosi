@@ -1,5 +1,5 @@
 import type { Board, NutBody, ScrewBody } from '../game/board';
-import { PALETTE, randomPaletteColor } from '../game/palette';
+import { PALETTE, leastUsedHue } from '../game/palette';
 import {
   SCREW,
   SCREW_CAP_HALF,
@@ -101,7 +101,8 @@ export function settle(board: Board, screw: ScrewBody): void {
   }
 }
 
-export function spawnScrew(board: Board, kind: ScrewBody['kind'], x: number, y: number, color = randomPaletteColor()): ScrewBody {
+export function spawnScrew(board: Board, kind: ScrewBody['kind'], x: number, y: number, color?: number): ScrewBody {
+  color ??= leastUsedHue(board.screws.map((screw) => screw.color));
   const screw: ScrewBody = {
     id: `s${Date.now().toString(36)}`,
     kind,
@@ -185,7 +186,8 @@ export function setNutT(board: Board, screw: ScrewBody, nutId: string, t: number
   nut.t = Math.min(hi, Math.max(lo, t));
 }
 
-export function addNut(board: Board, screw: ScrewBody, run: number, t: number, color = randomPaletteColor()): void {
+export function addNut(board: Board, screw: ScrewBody, run: number, t: number, color?: number): void {
+  color ??= leastUsedHue((board.nuts ?? []).map((nut) => nut.color), screw.color);
   materialize(board, screw);
   board.nuts!.push({
     id: `n${Date.now().toString(36)}`,

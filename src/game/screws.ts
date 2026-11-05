@@ -1,6 +1,6 @@
 import type { NutBody, ScrewBody } from './board';
+import { leastUsedHue } from './palette';
 import {
-  NUT_COLORS,
   PART,
   SCREW,
   SCREW_CAP_HALF,
@@ -44,18 +44,17 @@ export function stockNuts(screws: ScrewBody[]): NutBody[] {
   const nuts: NutBody[] = [];
   for (const screw of screws) {
     const layout = seatedLayout(screw.kind);
-    let colorAt = 0;
     layout.runs.forEach((run, runIndex) => {
       const ordered = [...run.stations].sort((a, b) => (screw.kind === 'straight' ? a - b : b - a));
       ordered.forEach((t, n) => {
+        const color = leastUsedHue(nuts.map((nut) => nut.color), screw.color);
         nuts.push({
           id: `${screw.id}:${runIndex}:${n}`,
           screwId: screw.id,
           run: runIndex,
           t,
-          color: NUT_COLORS[colorAt % NUT_COLORS.length],
+          color,
         });
-        colorAt += 1;
       });
     });
   }
