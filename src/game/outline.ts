@@ -12,6 +12,10 @@ import { outline } from 'three/addons/tsl/display/OutlineNode.js';
 
 const EDGE_THICKNESS = 1;
 const EDGE_STRENGTH = 3;
+/** Opacity eases toward the held piece, and toward clear after release. */
+const FADE = 14;
+/** Below this the mask is empty, so the frame skips the outline pass. */
+const GONE = 0.02;
 
 function pieceColor(root: THREE.Object3D, out: THREE.Color): void {
   out.set(0xffffff);
@@ -27,7 +31,7 @@ export function mountOutline(
   scene: THREE.Scene,
   camera: THREE.Camera,
 ): {
-  show: (root: THREE.Object3D | null, opacity: number) => void;
+  follow: (root: THREE.Object3D | null, dt: number) => void;
   render: () => void;
   dispose: () => void;
 } {
@@ -44,20 +48,28 @@ export function mountOutline(
   post.outputNode = mask.mul(edgeColor).mul(edgeStrength).add(pass(scene, camera));
 
   const color = new THREE.Color();
+  let shown: THREE.Object3D | null = null;
+  let level = 0;
   let active = false;
 
   return {
-    show(root, opacity) {
+    follow(root, dt) {
+      if (root !== shown) {
+        shown = root;
+        level = 0;
+      }
+      level += ((root ? 1 : 0) - level) * Math.min(1, dt * FADE);
+      if (!root && level < GONE) shown = null;
       selected.length = 0;
-      active = root !== null && opacity > 0.02;
-      if (!active || !root) {
+      active = shown !== null && level > GONE;
+      if (!active || !shown) {
         edgeStrength.value = 0;
         return;
       }
-      selected.push(root);
-      pieceColor(root, color);
+      selected.push(shown);
+      pieceColor(shown, color);
       edgeColor.value.copy(color);
-      edgeStrength.value = opacity * EDGE_STRENGTH;
+      edgeStrength.value = level * EDGE_STRENGTH;
     },
     render() {
       if (active) post.render();

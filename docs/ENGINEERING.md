@@ -18,7 +18,7 @@ portrait-webgpu-base/
 ├── capacitor.config.ts     # contentInset never · scrollEnabled false
 ├── src/
 │   ├── main.ts             # 舞台、灯光、阴影
-│   ├── game/               # 螺丝零件、关卡、拖动。规则见 SCREWS.md
+│   ├── game/               # 零件、关卡、滑动、意图、闪光、描边、离场。规则见 SCREWS.md
 │   ├── create-renderer.ts
 │   ├── style.css
 │   ├── adapt/

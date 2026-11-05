@@ -13,6 +13,20 @@ const HINT_SECONDS = 0.08;
 /** Free travel, in world units, before another hit may flash. */
 export const HIT_REARM = 0.03;
 
+export type ContactLatch = { armed: boolean; free: number };
+
+export function contactLatch(): ContactLatch {
+  return { armed: true, free: 0 };
+}
+
+/** True once, on the frame a blocked slide actually moves. Rearms after free travel. */
+export function stepContact(latch: ContactLatch, moved: number, blocked: boolean): boolean {
+  const feel = contactFeel(latch.armed, latch.free, moved, blocked);
+  latch.armed = feel.armed;
+  latch.free = feel.free;
+  return feel.fire;
+}
+
 export function contactFeel(
   armed: boolean,
   free: number,

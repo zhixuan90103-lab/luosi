@@ -11,7 +11,7 @@ import { aimNut, nutMesh, PART, screwMesh } from './parts';
 import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
 import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut } from './screws';
 import type { Board } from './board';
-import { contactFeel, mountFeedback } from './feedback';
+import { contactLatch, mountFeedback, stepContact } from './feedback';
 import { pulseHaptic } from './hapticFeel';
 import { INTENT_CLEAR, axesParallel, intentWorld, strokeChoice } from './intent';
 import {
@@ -73,8 +73,6 @@ export function mountPlay(options: {
   let pending: { x: number; y: number; nutId: string; screwId: string } | null = null;
   const feedback = mountFeedback();
   const selectionOutline = mountOutline(renderer, scene, camera);
-  let outlineLevel = 0;
-  let outlined: THREE.Object3D | null = null;
   let pointerId: number | null = null;
   let awaitingNext = false;
   let bounds: Aabb = { minX: -1, minY: -1, maxX: 1, maxY: 1 };
@@ -245,10 +243,7 @@ export function mountPlay(options: {
     const beforeY = screw.y;
     const result = dragScrew(board.screws, board.nuts ?? [], screw.id, from, world);
     const moved = Math.hypot(screw.x - beforeX, screw.y - beforeY);
-    const feel = contactFeel(screwDrag.armed, screwDrag.free, moved, result.blocked);
-    screwDrag.armed = feel.armed;
-    screwDrag.free = feel.free;
-    if (feel.fire) {
+    if (stepContact(screwDrag, moved, result.blocked)) {
       pulseHaptic('hit');
       const view = screwViews.find((item) => item.id === screw.id);
       if (view) feedback.impact(view.mesh);
@@ -271,10 +266,7 @@ export function mountPlay(options: {
     const before = nut.t;
     const result = slideNut(board.nuts, board.screws, nut.id, target);
     const moved = Math.abs(nut.t - before);
-    const feel = contactFeel(nutDrag.armed, nutDrag.free, moved, result.blocked);
-    nutDrag.armed = feel.armed;
-    nutDrag.free = feel.free;
-    if (feel.fire) {
+    if (stepContact(nutDrag, moved, result.blocked)) {
       pulseHaptic('hit');
       const view = nutViews.find((item) => item.id === nut.id);
       if (view) feedback.impact(view.mesh);
@@ -337,12 +329,12 @@ export function mountPlay(options: {
   }
 
   function beginNut(id: string, t0: number, x: number, y: number): void {
-    nutDrag = { id, t0, x, y, armed: true, free: 0 };
+    nutDrag = { id, t0, x, y, ...contactLatch() };
     pulseHaptic('grab');
   }
 
   function beginScrew(id: string, x: number, y: number, at: { x: number; y: number }): void {
-    screwDrag = { id, x0: at.x, y0: at.y, x, y, armed: true, free: 0 };
+    screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch() };
     pulseHaptic('grab');
   }
 
@@ -465,13 +457,7 @@ export function mountPlay(options: {
       : screwDrag
         ? screwViews.find((item) => item.id === screwDrag?.id)?.mesh ?? null
         : null;
-    if (selected !== outlined) {
-      outlined = selected;
-      outlineLevel = 0;
-    }
-    outlineLevel += ((selected ? 1 : 0) - outlineLevel) * Math.min(1, dt * 14);
-    if (!selected && outlineLevel < 0.02) outlined = null;
-    selectionOutline.show(outlined, outlined ? outlineLevel : 0);
+    selectionOutline.follow(selected, dt);
     selectionOutline.render();
     requestAnimationFrame(tick);
   }
