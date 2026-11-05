@@ -7,24 +7,14 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from '../adapt/design';
 import { mountOutline } from './outline';
-import { aimNut, authoredLayout, nutMesh, PART, screwMesh } from './parts';
-import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
+import { aimNut, authoredLayout, nutMesh, PART, screwMassCenter, screwMesh } from './parts';
+import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, screwDepartureSpin, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
 import { dragScrew, nutAt, nutAxis, nutPastTip, nutSpin, nutWorld, releaseSlack, screwAt, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew } from './screws';
 import type { Board } from './board';
 import { contactLatch, mountFeedback, stepContact } from './feedback';
 import { pulseHaptic } from './hapticFeel';
 import { INTENT_CLEAR, INTENT_SLEEVE, axesParallel, intentWorld, strokeChoice } from './intent';
-import {
-  boardBounds,
-  cameraForFit,
-  FRAME_MARGIN,
-  frameFor,
-  viewSize,
-  worldFromDesign,
-  type Aabb,
-  type Frame,
-  type UsableRect,
-} from './camera';
+import { onStageZoom, stageZoomValue, viewSize, worldFromDesign } from './camera';
 
 export type PlayHandles = {
   resize: () => void;
@@ -75,13 +65,6 @@ export function mountPlay(options: {
   const selectionOutline = mountOutline(renderer, scene, camera);
   let pointerId: number | null = null;
   let awaitingNext = false;
-  let bounds: Aabb = { minX: -1, minY: -1, maxX: 1, maxY: 1 };
-  let limits: Frame = frameFor(bounds, {
-    left: FRAME_MARGIN,
-    top: FRAME_MARGIN,
-    right: DESIGN_WIDTH - FRAME_MARGIN,
-    bottom: DESIGN_HEIGHT - FRAME_MARGIN,
-  });
 
   let last = performance.now();
   const fpsEl = document.getElementById('hud-fps');
@@ -203,7 +186,12 @@ export function mountPlay(options: {
     const out = screw ? screwSlideAxis(screw) : { x: 1, y: 0 };
     board.screws = board.screws.filter((item) => item.id !== id);
     board.nuts = (board.nuts ?? []).filter((nut) => nut.screwId !== id);
-    if (view) dropMesh(view.mesh, null);
+    if (view && screw) {
+      const mass = screwMassCenter(screw.kind, screw.edges);
+      const c = Math.cos(screw.theta);
+      const s = Math.sin(screw.theta);
+      dropMesh(view.mesh, screwDepartureSpin({ x: mass.x * c - mass.y * s, y: mass.x * s + mass.y * c }));
+    } else if (view) dropMesh(view.mesh, null);
     for (const nut of nuts) {
       const nutView = nutViews.find((item) => item.id === nut.id);
       if (nutView) dropMesh(nutView.mesh, nutDepartureSpin(screw ? nutAxis(screw, nut) : out));
@@ -309,40 +297,15 @@ export function mountPlay(options: {
     noteClear();
   }
 
-  function usableRect(): UsableRect {
-    const stage = canvas.parentElement;
-    const stageRect = stage?.getBoundingClientRect();
-    let top = FRAME_MARGIN;
-    let bottom = DESIGN_HEIGHT - FRAME_MARGIN;
-    const left = FRAME_MARGIN;
-    const right = DESIGN_WIDTH - FRAME_MARGIN;
-    if (!stageRect || stageRect.width <= 0 || stageRect.height <= 0) {
-      return { left, top, right, bottom };
-    }
-    const designY = (clientY: number) => ((clientY - stageRect.top) / stageRect.height) * DESIGN_HEIGHT;
-    const header = document.querySelector('#ui-root header');
-    const dock = document.querySelector('#dock');
-    if (header) top = Math.max(top, designY(header.getBoundingClientRect().bottom) + FRAME_MARGIN);
-    if (dock) {
-      const dockRect = dock.getBoundingClientRect();
-      if (dockRect.height > 0) bottom = Math.min(bottom, designY(dockRect.top) - FRAME_MARGIN);
-    }
-    if (bottom - top < 80) return { left, top: FRAME_MARGIN, right, bottom: DESIGN_HEIGHT - FRAME_MARGIN };
-    return { left, top, right, bottom };
-  }
-
   function applyFrame(): void {
     const { w, h } = viewSize();
     camera.left = -w / 2;
     camera.right = w / 2;
     camera.top = h / 2;
     camera.bottom = -h / 2;
-    bounds = boardBounds(board);
-    limits = frameFor(bounds, usableRect());
-    const fit = cameraForFit(bounds, limits);
-    camera.zoom = fit.zoom;
-    camera.position.set(fit.x, fit.y, 12);
-    camera.lookAt(fit.x, fit.y, 0);
+    camera.zoom = stageZoomValue();
+    camera.position.set(0, 0, 12);
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -455,7 +418,7 @@ export function mountPlay(options: {
       stepFall(faller, dt);
       faller.mesh.position.y += faller.vy * dt;
       if (faller.speed !== 0) {
-        spinAxis.set(faller.axisX, faller.axisY, 0);
+        spinAxis.set(faller.axisX, faller.axisY, faller.axisZ);
         faller.mesh.rotateOnWorldAxis(spinAxis, faller.speed * dt);
       }
       const { x, y } = faller.mesh.position;
@@ -479,11 +442,13 @@ export function mountPlay(options: {
     selectionOutline.render();
     requestAnimationFrame(tick);
   }
+  const stopZoom = onStageZoom(() => applyFrame());
   requestAnimationFrame(tick);
 
   return {
     resize: () => applyFrame(),
     dispose: () => {
+      stopZoom();
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);

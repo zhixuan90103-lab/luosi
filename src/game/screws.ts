@@ -11,7 +11,9 @@ import {
   headSilhouette,
   nutSilhouette,
   authoredLayout,
+  keptBuckleT,
   screwLayout,
+  shapeRuns,
   screwSpans,
   type ScrewKind,
   type ScrewLayout,
@@ -541,9 +543,25 @@ export function slideNut(
   return { blocked: blocked || Math.abs(safe - target) > 0.02 };
 }
 
-/** Axis the screw slides on, the same way a capsule bar slides through its buckle. */
+/** Local direction of the straight edge that still has a buckle. */
+function slideLocal(screw: ScrewBody): { x: number; y: number } {
+  if (screw.edges && screw.buckleT) {
+    const runs = shapeRuns(screw.kind, screw.edges);
+    for (let index = 0; index < runs.length; index += 1) {
+      if (keptBuckleT(screw.kind, index, screw.buckleT[index]) == null) continue;
+      const run = runs[index];
+      const dx = run.x1 - run.x0;
+      const dy = run.y1 - run.y0;
+      const length = Math.hypot(dx, dy) || 1;
+      return { x: dx / length, y: dy / length };
+    }
+  }
+  return screw.kind === 'u' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+}
+
+/** Axis the screw slides on. The hole follows the edge that still holds a buckle. */
 export function screwSlideAxis(screw: ScrewBody): { x: number; y: number } {
-  const local = screw.kind === 'u' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+  const local = slideLocal(screw);
   const c = Math.cos(screw.theta);
   const s = Math.sin(screw.theta);
   return { x: local.x * c - local.y * s, y: local.x * s + local.y * c };

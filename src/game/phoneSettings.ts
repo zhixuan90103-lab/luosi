@@ -1,3 +1,4 @@
+import { setStageZoom, stageZoomValue } from './camera';
 import { hapticFeel, hapticLabel, resetHapticFeel, setHapticPair, type HapticKind } from './hapticFeel';
 
 /** Phone gear: haptic test and the play intensities. Not the level editor. */
@@ -21,6 +22,10 @@ export function mountPhoneSettings(): void {
 function fillTune(tune: HTMLElement): void {
   tune.replaceChildren();
   const kinds: HapticKind[] = ['grab', 'hit', 'ready', 'clear'];
+  const cameraTitle = document.createElement('p');
+  cameraTitle.className = 'panel-title';
+  cameraTitle.textContent = '摄像机';
+  tune.append(cameraTitle, zoomSlider());
   const title = document.createElement('p');
   title.className = 'panel-title';
   title.textContent = '试玩震动';
@@ -34,6 +39,28 @@ function fillTune(tune: HTMLElement): void {
     fillTune(tune);
   });
   tune.append(reset);
+}
+
+function zoomSlider(): HTMLLabelElement {
+  const node = document.createElement('label');
+  node.className = 'editor-slider';
+  const caption = document.createElement('span');
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = '0.4';
+  input.max = '2.5';
+  input.step = '0.05';
+  input.value = String(stageZoomValue());
+  const show = () => {
+    caption.textContent = `缩放 ${Number(input.value).toFixed(2)}`;
+  };
+  show();
+  input.addEventListener('input', () => {
+    show();
+    setStageZoom(Number(input.value));
+  });
+  node.append(caption, input);
+  return node;
 }
 
 function row(kind: HapticKind): HTMLDivElement {

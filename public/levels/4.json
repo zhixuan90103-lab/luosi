@@ -1,0 +1,150 @@
+{
+  "screws": [
+    {
+      "id": "smw3avbck",
+      "kind": "u",
+      "x": -0.58,
+      "y": 0.513,
+      "theta": -1.571,
+      "color": 10574895,
+      "edges": [
+        1.231,
+        0.48,
+        0.631
+      ],
+      "buckleT": [
+        0.074,
+        null,
+        0.074
+      ]
+    },
+    {
+      "id": "smw3avun6",
+      "kind": "straight",
+      "x": -0.843,
+      "y": 0.812,
+      "theta": 0,
+      "color": 3447003,
+      "edges": [
+        0.855
+      ],
+      "buckleT": [
+        0.162
+      ]
+    },
+    {
+      "id": "smw3axbai",
+      "kind": "straight",
+      "x": 0.843,
+      "y": 0.789,
+      "theta": -1.571,
+      "color": 9323693,
+      "edges": [
+        0.778
+      ],
+      "buckleT": [
+        0.162
+      ]
+    },
+    {
+      "id": "smw3axsb8",
+      "kind": "straight",
+      "x": 0.303,
+      "y": -0.106,
+      "theta": -1.571,
+      "color": 3447003,
+      "edges": [
+        0.923
+      ],
+      "buckleT": [
+        0.166
+      ]
+    },
+    {
+      "id": "smw3aym1v",
+      "kind": "straight",
+      "x": 0.275,
+      "y": 1.407,
+      "theta": -1.571,
+      "color": 3447003,
+      "edges": [
+        0.73
+      ],
+      "buckleT": [
+        0.156
+      ]
+    }
+  ],
+  "nuts": [
+    {
+      "id": "nmw3aw3nn",
+      "screwId": "smw3avbck",
+      "run": 0,
+      "t": 0.291,
+      "color": 10574895
+    },
+    {
+      "id": "nmw3axnuq",
+      "screwId": "smw3avbck",
+      "run": 2,
+      "t": 0.544,
+      "color": 10574895
+    },
+    {
+      "id": "nmw3ayc2x",
+      "screwId": "smw3avun6",
+      "run": 0,
+      "t": 0.736,
+      "color": 12720219
+    },
+    {
+      "id": "nmw3az10q",
+      "screwId": "smw3aym1v",
+      "run": 0,
+      "t": 0.369,
+      "color": 12720219
+    },
+    {
+      "id": "nmw3b09m2",
+      "screwId": "smw3avbck",
+      "run": 0,
+      "t": 1.122,
+      "color": 3447003
+    },
+    {
+      "id": "nmw3b0mhw",
+      "screwId": "smw3aym1v",
+      "run": 0,
+      "t": 0.594,
+      "color": 3447003
+    },
+    {
+      "id": "nmw3b0y0l",
+      "screwId": "smw3axbai",
+      "run": 0,
+      "t": 0.53,
+      "color": 3447003
+    },
+    {
+      "id": "nmw3b18k7",
+      "screwId": "smw3avbck",
+      "run": 2,
+      "t": 0.285,
+      "color": 3447003
+    },
+    {
+      "id": "nmw3b1brv",
+      "screwId": "smw3axsb8",
+      "run": 0,
+      "t": 0.494,
+      "color": 15158332
+    },
+    {
+      "id": "nmw3b1cg2",
+      "screwId": "smw3axsb8",
+      "run": 0,
+      "t": 0.734,
+      "color": 3447003
+    }
+  ]
+}

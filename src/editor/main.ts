@@ -3,13 +3,15 @@ import { applyStageTransform, computeStageLayout, watchStageLayout } from '../ad
 import { createRenderer, resizeToDesign } from '../create-renderer';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../adapt/design';
 import type { Board, ScrewBody } from '../game/board';
-import { designFromWorld, worldFromDesign } from '../game/camera';
+import { STAGE_ZOOM, designFromWorld, worldFromDesign } from '../game/camera';
 import {
   PART,
   SCREW,
   aimNut,
   authoredBuckles,
+  headSilhouette,
   nutMesh,
+  screwLocalBounds,
   screwMesh,
   shapeRuns,
 } from '../game/parts';
@@ -17,11 +19,15 @@ import { nutAxis, nutWorld, seatedLayout, toWorld } from '../game/screws';
 import {
   PALETTE,
   addNut,
+  centerLevel,
+  deleteBuckle,
   deleteNut,
   deleteScrew,
   levelPayload,
   paletteHex,
+  rotateLevelClockwise,
   setBuckleT,
+  setNutT,
   spaceNuts,
   setEdgeLength,
   shownNuts,
@@ -32,7 +38,8 @@ type Drag =
   | { kind: 'move'; id: string; dx: number; dy: number }
   | { kind: 'rotate'; id: string }
   | { kind: 'edge'; id: string; index: number; fromDead: boolean }
-  | { kind: 'buckle'; id: string; index: number };
+  | { kind: 'buckle'; id: string; index: number }
+  | { kind: 'nut'; id: string; nutId: string };
 
 const shell = document.getElementById('shell')!;
 const viewport = document.getElementById('viewport')!;
@@ -50,6 +57,7 @@ let savedText = '';
 let tracking = false;
 let selectedId: string | null = null;
 let selectedNutId: string | null = null;
+let selectedBuckle: { id: string; edge: number } | null = null;
 let drag: Drag | null = null;
 let pendingNut: { id: string; run: number; along: number; x: number; y: number } | null = null;
 let brush: number | null = null;
@@ -85,7 +93,7 @@ async function boot(): Promise<void> {
     camera.right = w / 2;
     camera.top = h / 2;
     camera.bottom = -h / 2;
-    camera.zoom = 1.35;
+    camera.zoom = STAGE_ZOOM;
     camera.updateProjectionMatrix();
   };
   fitCamera();
@@ -157,13 +165,25 @@ async function boot(): Promise<void> {
     yInput.disabled = !selected;
     write(angleInput, selected ? String(Math.round((selected.theta * 180) / Math.PI)) : '');
     if (selected) {
-      const design = designFromWorld(selected.x, selected.y, camera.position.x, camera.position.y, camera.zoom);
+      const center = screwCenter(selected);
+      const design = designFromWorld(center.x, center.y, camera.position.x, camera.position.y, camera.zoom);
       write(xInput, String(Math.round(design.x - DESIGN_WIDTH / 2)));
       write(yInput, String(Math.round(design.y - DESIGN_HEIGHT / 2)));
     } else {
       write(xInput, '');
       write(yInput, '');
     }
+  };
+
+  const screwCenter = (screw: ScrewBody) => {
+    const bounds = screwLocalBounds(screw.kind, screw.edges);
+    return toWorld(screw, (bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2);
+  };
+
+  const placeCenter = (screw: ScrewBody, x: number, y: number) => {
+    const center = screwCenter(screw);
+    screw.x += x - center.x;
+    screw.y += y - center.y;
   };
 
   const drawHandles = (screw: ScrewBody) => {
@@ -228,14 +248,30 @@ async function boot(): Promise<void> {
       }
     }
     for (const screw of board.screws) {
+      if (screw.kind !== 'straight') continue;
+      const cap = headSilhouette();
+      const local = localOf(screw, at.x, at.y);
+      const onHead = Math.abs(local.x - cap.shift) <= cap.halfAlong + 0.05 && Math.abs(local.y) <= cap.halfAcross + 0.04;
+      if (!onHead) continue;
+      selectedId = screw.id;
+      selectedNutId = null;
+      selectedBuckle = null;
+      drag = { kind: 'move', id: screw.id, dx: at.x - screw.x, dy: at.y - screw.y };
+      draw();
+      return;
+    }
+    for (const screw of board.screws) {
       const seats = screw.edges && screw.buckleT
         ? authoredBuckles(screw.kind, screw.edges, screw.buckleT)
         : seatedLayout(screw.kind).buckles;
       for (let index = 0; index < seats.length; index += 1) {
-        const seat = toWorld(screw, seats[index].x, seats[index].y);
+        const buckle = seats[index];
+        const seat = toWorld(screw, buckle.x, buckle.y);
         if (near(at.x, at.y, seat.x, seat.y, 0.16)) {
+          const edge = 'edge' in buckle && typeof buckle.edge === 'number' ? buckle.edge : index;
           selectedId = screw.id;
-          drag = { kind: 'buckle', id: screw.id, index };
+          selectedBuckle = { id: screw.id, edge };
+          drag = { kind: 'buckle', id: screw.id, index: edge };
           draw();
           return;
         }
@@ -249,6 +285,7 @@ async function boot(): Promise<void> {
         if (!board.nuts) board.nuts = shownNuts(board);
         selectedId = screw.id;
         selectedNutId = nut.id;
+        drag = { kind: 'nut', id: screw.id, nutId: nut.id };
         draw();
         return;
       }
@@ -305,31 +342,43 @@ async function boot(): Promise<void> {
       }
     }
     if (!drag) return;
+    const action = drag;
     const at = pointer(event);
-    const screw = board.screws.find((item) => item.id === drag?.id);
-    if (!screw || !drag) return;
-    if (drag.kind === 'move') {
-      screw.x = at.x - drag.dx;
-      screw.y = at.y - drag.dy;
-    } else if (drag.kind === 'rotate') {
+    const screw = board.screws.find((item) => item.id === action.id);
+    if (!screw) return;
+    if (action.kind === 'move') {
+      screw.x = at.x - action.dx;
+      screw.y = at.y - action.dy;
+    } else if (action.kind === 'rotate') {
       screw.theta = Math.atan2(at.y - screw.y, at.x - screw.x) - Math.PI / 2;
-    } else if (drag.kind === 'buckle') {
-      const run = shapeRuns(screw.kind, screw.edges)[drag.index];
+    } else if (action.kind === 'nut') {
+      const nut = board.nuts?.find((item) => item.id === action.nutId);
+      const run = nut ? shapeRuns(screw.kind, screw.edges)[nut.run] : undefined;
+      if (nut && run) {
+        const local = localOf(screw, at.x, at.y);
+        const dx = run.x1 - run.x0;
+        const dy = run.y1 - run.y0;
+        const length = Math.hypot(dx, dy) || 1;
+        const along = ((local.x - run.x0) * dx + (local.y - run.y0) * dy) / length;
+        setNutT(board, screw, nut.id, along);
+      }
+    } else if (action.kind === 'buckle') {
+      const run = shapeRuns(screw.kind, screw.edges)[action.index];
       const local = localOf(screw, at.x, at.y);
       const dx = run.x1 - run.x0;
       const dy = run.y1 - run.y0;
       const length = Math.hypot(dx, dy) || 1;
       const along = ((local.x - run.x0) * dx + (local.y - run.y0) * dy) / length;
-      setBuckleT(board, screw, drag.index, along);
+      setBuckleT(board, screw, action.index, along);
     } else {
-      const run = shapeRuns(screw.kind, screw.edges)[drag.index];
+      const run = shapeRuns(screw.kind, screw.edges)[action.index];
       const local = localOf(screw, at.x, at.y);
       const dx = run.x1 - run.x0;
       const dy = run.y1 - run.y0;
       const length = Math.hypot(dx, dy) || 1;
       const along = ((local.x - run.x0) * dx + (local.y - run.y0) * dy) / length;
-      const nextAlong = drag.fromDead ? length - along : along;
-      setEdgeLength(board, screw, drag.index, nextAlong, drag.fromDead);
+      const nextAlong = action.fromDead ? length - along : along;
+      setEdgeLength(board, screw, action.index, nextAlong, action.fromDead);
     }
     draw();
   });
@@ -378,6 +427,7 @@ async function boot(): Promise<void> {
     button.addEventListener('click', () => {
       const kind = button.dataset.kind as ScrewBody['kind'];
       const screw = spawnScrew(board, kind, camera.position.x, camera.position.y, brush ?? undefined);
+      placeCenter(screw, camera.position.x, camera.position.y);
       selectedId = screw.id;
       selectedNutId = null;
       draw();
@@ -389,6 +439,18 @@ async function boot(): Promise<void> {
     deleteScrew(board, selectedId);
     selectedId = null;
     selectedNutId = null;
+    draw();
+  });
+
+  document.getElementById('buckle-delete')!.addEventListener('click', () => {
+    if (!selectedBuckle) {
+      setStatus('先点中一颗银卡扣');
+      return;
+    }
+    const screw = board.screws.find((item) => item.id === selectedBuckle?.id);
+    if (!screw) return;
+    deleteBuckle(board, screw, selectedBuckle.edge);
+    selectedBuckle = null;
     draw();
   });
 
@@ -413,8 +475,7 @@ async function boot(): Promise<void> {
     const y = Number(yInput.value);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const world = worldFromDesign(x + DESIGN_WIDTH / 2, y + DESIGN_HEIGHT / 2, camera.position.x, camera.position.y, camera.zoom);
-    screw.x = world.x;
-    screw.y = world.y;
+    placeCenter(screw, world.x, world.y);
     draw();
   };
   xInput.addEventListener('change', applyPose);
@@ -531,6 +592,36 @@ async function boot(): Promise<void> {
     order = copy;
     renderList();
   };
+  document.getElementById('level-center')!.addEventListener('click', () => {
+    centerLevel(board);
+    draw();
+    setStatus('已把这一关挪到画面中心');
+  });
+  const nudgeLevel = (designY: number) => {
+    const origin = worldFromDesign(DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2, camera.position.x, camera.position.y, camera.zoom);
+    const shifted = worldFromDesign(DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + designY, camera.position.x, camera.position.y, camera.zoom);
+    const dx = shifted.x - origin.x;
+    const dy = shifted.y - origin.y;
+    for (const screw of board.screws) {
+      screw.x += dx;
+      screw.y += dy;
+      screw.locks = undefined;
+    }
+    draw();
+  };
+  document.getElementById('level-nudge-up')!.addEventListener('click', () => {
+    nudgeLevel(-10);
+    setStatus('已上移 10');
+  });
+  document.getElementById('level-nudge-down')!.addEventListener('click', () => {
+    nudgeLevel(10);
+    setStatus('已下移 10');
+  });
+  document.getElementById('level-rotate')!.addEventListener('click', () => {
+    rotateLevelClockwise(board);
+    draw();
+    setStatus('已顺时针转 90°');
+  });
   document.getElementById('level-up')!.addEventListener('click', () => moveLevel(-1));
   document.getElementById('level-down')!.addEventListener('click', () => moveLevel(1));
 

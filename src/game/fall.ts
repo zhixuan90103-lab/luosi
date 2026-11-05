@@ -4,7 +4,8 @@
  * Linear speed starts at 0. Gravity pulls world −Y. Nothing else pushes.
  * A nut spins on one world axis chosen at release and keeps that axis.
  * Speed grows along the axis, so the flip continues the way it started.
- * A screw and its buckle do not spin.
+ * A screw turns in the screen plane toward its heavy side as it falls.
+ * Its buckle does not spin.
  * The mesh is lifted toward the camera (+Z) by its own reach, then stacked,
  * so a tumble stays in front of pieces still on the board. Orthographic
  * zoom does not change with Z.
@@ -22,7 +23,7 @@ export const FALL_LAYER_GAP = 0.08;
 /** How far below the view the origin may travel before it is removed. */
 export const FALL_BOTTOM_MARGIN = 0.8;
 
-export type FallSpin = { axisX: number; axisY: number; speed: number; accel: number };
+export type FallSpin = { axisX: number; axisY: number; axisZ: number; speed: number; accel: number };
 
 export type FallMotion = FallSpin & { vy: number };
 
@@ -40,7 +41,18 @@ export function nutDepartureSpin(out: { x: number; y: number }): FallSpin {
   const wx = Math.sin(theta) * speed + Math.cos(theta) * side;
   const wy = -Math.cos(theta) * speed + Math.sin(theta) * side;
   const mag = Math.hypot(wx, wy) || 1;
-  return { axisX: wx / mag, axisY: wy / mag, speed: mag, accel: 5 + Math.random() * 5 };
+  return { axisX: wx / mag, axisY: wy / mag, axisZ: 0, speed: mag, accel: 5 + Math.random() * 5 };
+}
+
+/**
+ * Screen-plane spin. `heavy` is the center of mass relative to the anchor, in world XY.
+ * The heavy side drops. A longer offset tips faster.
+ */
+export function screwDepartureSpin(heavy: { x: number; y: number }): FallSpin {
+  const lever = Math.hypot(heavy.x, heavy.y);
+  const sign = Math.abs(heavy.x) > 0.02 ? Math.sign(heavy.x) : Math.sign(heavy.y || 1);
+  const speed = 1.4 + Math.min(2.4, lever * 1.6);
+  return { axisX: 0, axisY: 0, axisZ: sign, speed, accel: 0.4 + Math.min(1.6, lever) };
 }
 
 /** Farthest corner of the world bounds from the mesh origin. Rotation stays inside it. */
@@ -67,7 +79,7 @@ export function parkInFront(mesh: THREE.Object3D, front: number): number {
 }
 
 export function stillSpin(): FallSpin {
-  return { axisX: 1, axisY: 0, speed: 0, accel: 0 };
+  return { axisX: 1, axisY: 0, axisZ: 0, speed: 0, accel: 0 };
 }
 
 export function stepFall(motion: FallMotion, dt: number): void {

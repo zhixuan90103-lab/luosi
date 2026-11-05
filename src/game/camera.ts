@@ -11,6 +11,28 @@ import type { Board } from './board';
 import { screwLocalBounds } from './parts';
 
 export const VIEW_H = 10;
+/** Default play and editor zoom. The camera does not refit each level. */
+export const STAGE_ZOOM = 1.7;
+
+let stageZoom = STAGE_ZOOM;
+const zoomListeners = new Set<() => void>();
+
+/** Live play zoom. The gear slider writes this. */
+export function stageZoomValue(): number {
+  return stageZoom;
+}
+
+export function setStageZoom(value: number): void {
+  const next = Math.min(2.5, Math.max(0.4, value));
+  if (next === stageZoom) return;
+  stageZoom = next;
+  for (const listener of zoomListeners) listener();
+}
+
+export function onStageZoom(listener: () => void): () => void {
+  zoomListeners.add(listener);
+  return () => zoomListeners.delete(listener);
+}
 /** Empty design pixels kept around the level, inside the chrome. */
 export const FRAME_MARGIN = 24;
 /**

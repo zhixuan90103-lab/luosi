@@ -12,8 +12,8 @@ export type ScrewBody = {
    * (left leg, bottom, right leg). Missing means the built-in sizes.
    */
   edges?: number[];
-  /** One silver buckle per edge, measured from that edge's dead end. */
-  buckleT?: number[];
+  /** One silver buckle per edge, measured from that edge's dead end. Null means that edge has none. */
+  buckleT?: (number | null)[];
   /** Silver buckles locked in world space. The screw slides through them. */
   locks?: { x: number; y: number }[];
 };

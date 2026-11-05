@@ -1,33 +1,55 @@
 {
-  "rings": [],
-  "bars": [],
-  "pins": [],
-  "latches": [],
-  "volumes": true,
   "screws": [
     {
       "id": "straight",
       "kind": "straight",
-      "x": -0.65,
-      "y": -0.2,
-      "theta": 0,
-      "color": 3832789
+      "x": 0,
+      "y": 0.878,
+      "theta": -1.571,
+      "color": 3832789,
+      "edges": [
+        1.361
+      ],
+      "buckleT": [
+        0.198
+      ]
+    }
+  ],
+  "nuts": [
+    {
+      "id": "straight:0:0",
+      "screwId": "straight",
+      "run": 0,
+      "t": 0.395,
+      "color": 3447003
     },
     {
-      "id": "ell",
-      "kind": "l",
-      "x": -0.55,
-      "y": -1.59,
-      "theta": 0,
-      "color": 15109666
+      "id": "straight:0:1",
+      "screwId": "straight",
+      "run": 0,
+      "t": 0.816,
+      "color": 3066993
     },
     {
-      "id": "you",
-      "kind": "u",
-      "x": -0.75,
-      "y": 0.31,
-      "theta": 0,
-      "color": 1756572
+      "id": "straight:0:2",
+      "screwId": "straight",
+      "run": 0,
+      "t": 1.238,
+      "color": 16044095
+    },
+    {
+      "id": "nmw3a7ysx",
+      "screwId": "straight",
+      "run": 0,
+      "t": 0.606,
+      "color": 6049243
+    },
+    {
+      "id": "nmw3a7zvu",
+      "screwId": "straight",
+      "run": 0,
+      "t": 1.027,
+      "color": 12720219
     }
   ]
 }

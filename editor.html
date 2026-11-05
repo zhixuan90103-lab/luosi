@@ -29,6 +29,14 @@
           <button type="button" id="level-up">上移</button>
           <button type="button" id="level-down">下移</button>
         </div>
+        <div class="editor-row">
+          <button type="button" id="level-center">关卡居中</button>
+          <button type="button" id="level-rotate">顺时针 90°</button>
+        </div>
+        <div class="editor-row">
+          <button type="button" id="level-nudge-up">整体上移</button>
+          <button type="button" id="level-nudge-down">整体下移</button>
+        </div>
         <ol id="level-list"></ol>
       </section>
       <section>
@@ -48,10 +56,11 @@
         </label>
       </section>
       <section>
-        <p class="editor-note">点直边加螺丝扣。点已有的扣选中它，再用色板改颜色。X、Y 以画面中心为 0,0，向右、向下为正。</p>
+        <p class="editor-note">点直边加螺丝扣。拖已有的扣只能沿这条直边移动，过不了银卡扣，也不能叠到别的扣上。点中后可用色板改颜色。X、Y 是螺丝外形的中心，画面正中是 0,0，向右、向下为正。</p>
         <div class="editor-row">
           <button type="button" id="nut-space">螺丝扣均匀排布</button>
           <button type="button" id="nut-delete">删除螺丝扣</button>
+          <button type="button" id="buckle-delete">删除卡扣</button>
         </div>
         <div id="palette" class="palette"></div>
       </section>

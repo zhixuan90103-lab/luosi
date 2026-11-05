@@ -1,0 +1,62 @@
+{
+  "screws": [
+    {
+      "id": "smw3al8ri",
+      "kind": "straight",
+      "x": -0.496,
+      "y": 0.276,
+      "theta": 0,
+      "color": 1756828,
+      "edges": [
+        0.725
+      ],
+      "buckleT": [
+        0.141
+      ]
+    },
+    {
+      "id": "smw3alcus",
+      "kind": "straight",
+      "x": 0.496,
+      "y": 0.779,
+      "theta": -1.571,
+      "color": 15105570,
+      "edges": [
+        0.902
+      ],
+      "buckleT": [
+        0.153
+      ]
+    }
+  ],
+  "nuts": [
+    {
+      "id": "nmw3alxuc",
+      "screwId": "smw3al8ri",
+      "run": 0,
+      "t": 0.403,
+      "color": 10574895
+    },
+    {
+      "id": "nmw3am2us",
+      "screwId": "smw3al8ri",
+      "run": 0,
+      "t": 0.612,
+      "color": 15105570
+    },
+    {
+      "id": "nmw3amaxl",
+      "screwId": "smw3alcus",
+      "run": 0,
+      "t": 0.369,
+      "color": 12720219
+    },
+    {
+      "id": "nmw3amcx1",
+      "screwId": "smw3alcus",
+      "run": 0,
+      "t": 0.698,
+      "color": 3066993
+    }
+  ]
+}

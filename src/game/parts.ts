@@ -280,6 +280,34 @@ export function shapeRuns(kind: ScrewKind, edges?: readonly number[]): { x0: num
   ];
 }
 
+/**
+ * Center of mass in screw-local space. Straight edges weigh by length.
+ * A straight screw's head adds a blob at the origin.
+ */
+export function screwMassCenter(kind: ScrewKind, edges?: readonly number[]): { x: number; y: number } {
+  let mx = 0;
+  let my = 0;
+  let mass = 0;
+  const add = (x: number, y: number, m: number) => {
+    mx += x * m;
+    my += y * m;
+    mass += m;
+  };
+  if (kind === 'straight') add(0, 0, SCREW.head * SCREW.head * Math.PI);
+  for (const span of screwSpans(kind, edges)) {
+    if (span.kind === 'line') {
+      const length = Math.hypot(span.x1 - span.x0, span.y1 - span.y0);
+      add((span.x0 + span.x1) / 2, (span.y0 + span.y1) / 2, length);
+      continue;
+    }
+    const sweep = span.a1 - span.a0;
+    const mid = span.a0 + sweep / 2;
+    add(span.cx + Math.cos(mid) * SCREW.bend, span.cy + Math.sin(mid) * SCREW.bend, Math.abs(sweep) * SCREW.bend);
+  }
+  if (mass <= 0) return { x: 0, y: 0 };
+  return { x: mx / mass, y: my / mass };
+}
+
 export function runLength(run: { x0: number; y0: number; x1: number; y1: number }): number {
   return Math.hypot(run.x1 - run.x0, run.y1 - run.y0);
 }
@@ -292,9 +320,17 @@ export function clampBuckleT(length: number, t: number): number {
   return Math.min(hi, Math.max(lo, t));
 }
 
-export function defaultBuckleT(kind: ScrewKind, edges?: readonly number[]): number[] {
+/** U's bottom edge never takes a buckle. Null means the edge has none. */
+export function keptBuckleT(kind: ScrewKind, index: number, t: number | null | undefined): number | null {
+  if (kind === 'u' && index === 1) return null;
+  if (t == null || !Number.isFinite(t)) return null;
+  return t;
+}
+
+export function defaultBuckleT(kind: ScrewKind, edges?: readonly number[]): (number | null)[] {
   const half = buckleSleeveLen() / 2;
   return shapeRuns(kind, edges).map((run, index) => {
+    if (keptBuckleT(kind, index, 0) == null) return null;
     const inner = kind === 'straight' && index === 0 ? SCREW_CAP_HALF + half : half;
     return clampBuckleT(runLength(run), inner);
   });
@@ -314,13 +350,19 @@ export function buckleOnRun(
   };
 }
 
-/** One buckle on each straight edge. `buckleT` is from the dead end. */
+/** Buckles that are actually on the screw. `edge` is the straight-edge index. */
 export function authoredBuckles(
   kind: ScrewKind,
   edges: readonly number[],
-  buckleT: readonly number[],
-): { x: number; y: number; rot: number }[] {
-  return shapeRuns(kind, edges).map((run, index) => buckleOnRun(run, clampBuckleT(runLength(run), buckleT[index] ?? 0)));
+  buckleT: readonly (number | null)[],
+): { x: number; y: number; rot: number; edge: number }[] {
+  const seats: { x: number; y: number; rot: number; edge: number }[] = [];
+  shapeRuns(kind, edges).forEach((run, index) => {
+    const t = keptBuckleT(kind, index, buckleT[index]);
+    if (t == null) return;
+    seats.push({ ...buckleOnRun(run, clampBuckleT(runLength(run), t)), edge: index });
+  });
+  return seats;
 }
 
 /** Local centerline. Mesh, contact, and picking all read this. */
@@ -660,18 +702,19 @@ export function screwLayout(kind: ScrewKind): ScrewLayout {
 }
 
 /** Layout for a screw whose edges and buckle seats are stored on the level. */
-export function authoredLayout(kind: ScrewKind, edges: readonly number[], buckleT: readonly number[]): ScrewLayout {
+export function authoredLayout(kind: ScrewKind, edges: readonly number[], buckleT: readonly (number | null)[]): ScrewLayout {
   const half = buckleSleeveLen() / 2;
   const runs = shapeRuns(kind, edges).map((run, index) => {
     const length = runLength(run);
-    const t = clampBuckleT(length, buckleT[index] ?? 0);
+    const t = keptBuckleT(kind, index, buckleT[index]);
+    const minT = t == null ? Math.min(length, SCREW_CAP_HALF) : Math.min(length, clampBuckleT(length, t) + half + SCREW_CAP_HALF);
     return {
       x0: run.x0,
       y0: run.y0,
       x1: run.x1,
       y1: run.y1,
       stations: [] as number[],
-      minT: Math.min(length, t + half + SCREW_CAP_HALF),
+      minT,
     };
   });
   return { head: kind === 'straight', buckles: authoredBuckles(kind, edges, buckleT), runs };
