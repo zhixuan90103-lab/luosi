@@ -34,9 +34,9 @@ index.html
       #stage
         canvas
         #ui-root
-          header.hud       关卡、分数、帧率、齿轮
+          header.hud       关卡、分数、齿轮
           #result          过关结算，默认 hidden
-          #haptic-panel    齿轮打开。震动测试和四档手感
+          #haptic-panel    齿轮打开。震动测试和各档手感
 #device-switcher / #device-label   (web only)
 ```
 
@@ -71,9 +71,9 @@ HUD 状态行有 `plugin: true/false`。`false` = 仍在默认 `CAPBridgeViewCon
 | 系统手势 | 网页：`style.css`、`main.ts`。原生回弹和四边推迟：`BridgeViewController.swift`。规范见 [ENGINEERING.md](./ENGINEERING.md) §5b |
 | 启动 HUD | `index.html` + `main.ts` |
 | 关卡 | `public/levels/`，读档 `src/game/levelio.ts` |
-| 手机设置 | `src/game/phoneSettings.ts`。齿轮里是震动测试和四档手感。试玩只发按下、撞上、解开 |
+| 手机设置 | `src/game/phoneSettings.ts`。齿轮里是震动测试和各档手感。数值在 `hapticFeel.ts`，播放在 `hapticsPlay.ts` |
 | 过关结算 | 松手时盘上没有螺丝和扣，`play.ts` 调 `onCleared`，`result.ts` 弹出 `#result`。重玩再开当前关，下一关向后，最后一关回到第 1 关 |
 | 试玩镜头 | `camera.ts` 视口高 10。`play.ts` 把螺丝外框放进顶栏和底栏之间，四周留 24 设计像素。适配只用这块区域的 `FIT_FILL`（0.9），这就是正常大小 |
-| 试玩规则 | [SCREWS.md](./SCREWS.md)。滑动、轮廓和出口在 `screws.ts`。点选和松手补量在 `intent.ts`。闪光 `feedback.ts`，选中描边 `outline.ts`，离场 `fall.ts`。`play.ts` 只收指针 |
+| 试玩规则 | [SCREWS.md](./SCREWS.md)。滑动、轮廓和出口在 `screws.ts`。点选和松手补量在 `intent.ts`。闪光 `feedback.ts`，选中描边 `outline.ts`（按下即亮），离场 `fall.ts`。震动在 `hapticsPlay.ts`。`play.ts` 只收指针 |
 | 音效（规划） | [AUDIO.md](./AUDIO.md) |
 | 震动接线 | [HAPTICS.md](./HAPTICS.md) |

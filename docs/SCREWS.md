@@ -13,12 +13,14 @@
 | `fall.ts` | 离场：重力、扣的转轴、层级、出屏销毁 |
 | `intent.ts` | 点选和松手补量。点选是 `pressAim` / `moveAim`。补量是 `releaseFlick` / `releasePad`。轮廓仍在 `screws.ts` |
 | `feedback.ts` | 撞上才闪一次，准备离场时慢慢变亮 |
-| `outline.ts` | 选中件的同色屏幕描边 |
+| `outline.ts` | 选中件的同色屏幕描边。按下立刻全亮，松手后淡出 |
+| `hapticFeel.ts` | 齿轮里的震动数值，存在本机 |
+| `hapticsPlay.ts` | 一次拖动一条震动会话。`play.ts` 只调用 `playHaptics` |
 | `palette.ts` | 螺丝和扣的六色，以及一关里怎么挑下一种颜色 |
 | `levelio.ts` | 读 `public/levels/`。顺序在 `order.json`。没有扣的数据时按布局生成 |
 | `editor.html` | 电脑上摆关卡。点保存才写入。不在这里试玩 |
 
-`play.ts` 不写阻挡、离场、意图、闪光或描边公式。`screws.ts` 不建网格。改规则时改对应模块，并改这一页。
+`play.ts` 不写阻挡、离场、意图、闪光、描边或震动公式。`screws.ts` 不建网格。改规则时改对应模块，并改这一页。
 
 ## 手感尺度
 

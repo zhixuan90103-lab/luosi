@@ -127,7 +127,7 @@ SceneDelegate.rootViewController = BridgeViewController()
 只改 storyboard **不够**：Capacitor 8 用 SceneDelegate 直接 `CAPBridgeViewController()`，会绕过 storyboard，HUD 出现 `plugin: false`，按钮无震。
 
 Swift **没有** `prepare`；引擎在 `load()` 启动。UIKit 反馈在主线程触发。验收用 HUD **点我震动**（`impact`）和状态行 `plugin: true`。  
-试玩的震写在 `src/game/play.ts`：按下、撞上、解开。短震播放器的复用在 `plugins/native-haptics/`，改完要 `ios:bootstrap`。
+试玩的震在 `src/game/hapticsPlay.ts`，数值在 `src/game/hapticFeel.ts`。`play.ts` 只调用 `playHaptics`。短震播放器的复用和持续震的强弱更新在 `plugins/native-haptics/`，改完要 `ios:bootstrap` 并重编真机。规范见 [HAPTICS.md](./HAPTICS.md) §3.3。
 
 ## 7b. Audio（尚未实现）
 
@@ -181,3 +181,4 @@ npm run cap:sync
 | 2026-11-05 | 点选：手指半径 18 设计像素只收候选。按下唯一件立刻选中。空白滑入先盯住，进真实轮廓才锁定。多件看轮廓或 8 像素滑轴。选中后不换。见 SCREWS.md「点选」 |
 | 2026-11-05 | 松手补脱离只看最后 100 毫秒。慢于 250 设计像素/秒仍是 5%，达到则上限 20%。补到离开卡扣为止，前面有阻挡就不补。见 SCREWS.md |
 | 2026-11-05 | 规范收成两处：点选、松手补脱离。上一行的 5% 只是慢拨上限。20% 是快拨上限，套在长卡扣里不保证一次脱离。见 SCREWS.md |
+| 2026-11-05 | 试玩震动收成拖动会话：按下短震，拖动持续震，螺丝扣转动叠短震。阻挡或离开杆立刻停。描边按下即亮。空白按下不占指针。左上角不显示帧率。见 HAPTICS.md §3.3、SCREWS.md「点选」 |
