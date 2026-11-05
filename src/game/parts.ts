@@ -250,8 +250,9 @@ export function buckleSleeveLen(): number {
   return buckleMetrics(SCREW.width, SCREW.straight * BUCKLE_LENGTH_SCALE).sleeveLen;
 }
 
-/** Shortest straight edge that can still hold its buckle. */
-export function minEdgeLength(kind: ScrewKind, index: number): number {
+/** Shortest straight edge. Without a buckle it only has to stay a stub. */
+export function minEdgeLength(kind: ScrewKind, index: number, hasBuckle = true): number {
+  if (!hasBuckle || keptBuckleT(kind, index, 0) == null) return 0.05;
   const sleeve = buckleSleeveLen();
   if (kind === 'straight') return SCREW_CAP_HALF + sleeve;
   if (kind === 'l' && index === 0) return Math.max(0.05, sleeve - SCREW.bend);

@@ -33,30 +33,7 @@ export function onStageZoom(listener: () => void): () => void {
   zoomListeners.add(listener);
   return () => zoomListeners.delete(listener);
 }
-/** Empty design pixels kept around the level, inside the chrome. */
-export const FRAME_MARGIN = 24;
-/**
- * Share of the usable rect the level is fitted into.
- * 0.9 is the normal framing: screws read 10% smaller than a tight fit.
- */
-export const FIT_FILL = 0.9;
-/** How far the fitted level sits above the usable center, when the frame has room. */
-export const FRAME_LIFT = 48;
-
 export type Aabb = { minX: number; minY: number; maxX: number; maxY: number };
-
-export type UsableRect = { left: number; top: number; right: number; bottom: number };
-
-export type Frame = {
-  minZoom: number;
-  maxZoom: number;
-  /** NDC of the usable rect's center. (0, 0) is the full design center. */
-  nx: number;
-  ny: number;
-  /** World size of the usable rect when zoom is 1. */
-  worldW: number;
-  worldH: number;
-};
 
 export function viewSize(): { w: number; h: number } {
   return { w: VIEW_H * (DESIGN_WIDTH / DESIGN_HEIGHT), h: VIEW_H };
@@ -126,39 +103,4 @@ export function boardBounds(board: Board): Aabb {
   }
   if (!Number.isFinite(minX)) return { minX: -1, minY: -1, maxX: 1, maxY: 1 };
   return { minX, minY, maxX, maxY };
-}
-
-export function frameFor(bounds: Aabb, usable: UsableRect): Frame {
-  const { w, h } = viewSize();
-  const widthPx = Math.max(usable.right - usable.left, 1);
-  const heightPx = Math.max(usable.bottom - usable.top, 1);
-  const worldW = (widthPx / DESIGN_WIDTH) * w;
-  const worldH = (heightPx / DESIGN_HEIGHT) * h;
-  const cx = (usable.left + usable.right) / 2;
-  const cy = (usable.top + usable.bottom) / 2;
-  const ndc = designNdc(cx, cy);
-  const bw = Math.max(bounds.maxX - bounds.minX, 1e-3);
-  const bh = Math.max(bounds.maxY - bounds.minY, 1e-3);
-  const minZoom = Math.min(worldW / bw, worldH / bh) * FIT_FILL;
-  return { minZoom, maxZoom: minZoom, nx: ndc.x, ny: ndc.y, worldW, worldH };
-}
-
-/** World distance the fit may raise the level. Never enough to leave the usable rect. */
-export function frameLift(bounds: Aabb, frame: Frame, zoom: number): number {
-  const room = frame.worldH / 2 / zoom - (bounds.maxY - bounds.minY) / 2;
-  const want = (FRAME_LIFT / DESIGN_HEIGHT) * viewSize().h / zoom;
-  return Math.max(0, Math.min(want, room));
-}
-
-/** Camera x/y is the center of the full stage, not the usable rect. */
-export function cameraForFit(bounds: Aabb, frame: Frame): { x: number; y: number; zoom: number } {
-  const { w, h } = viewSize();
-  const zoom = frame.minZoom;
-  const ox = (frame.nx * (w / 2)) / zoom;
-  const oy = (frame.ny * (h / 2)) / zoom;
-  return {
-    x: (bounds.minX + bounds.maxX) / 2 - ox,
-    y: (bounds.minY + bounds.maxY) / 2 - oy - frameLift(bounds, frame, zoom),
-    zoom,
-  };
 }

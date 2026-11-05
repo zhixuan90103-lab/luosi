@@ -106,26 +106,15 @@ export function nutAxis(screw: ScrewBody, nut: NutBody): { x: number; y: number 
   return { x: (localX * c - localY * s) / length, y: (localX * s + localY * c) / length };
 }
 
-function pointInSlab(slab: Slab, x: number, y: number): boolean {
-  const { along, across } = frameOf(slab, x, y);
-  return Math.abs(along) <= slab.halfAlong && Math.abs(across) <= slab.halfAcross;
-}
-
-/** Click target is the nut outline grown by 20%. Blocking still uses the real outline. */
-function nutPickSlab(screw: ScrewBody, nut: NutBody): Slab {
-  const slab = nutSlab(screw, nut);
-  return { ...slab, halfAlong: slab.halfAlong * 1.4, halfAcross: slab.halfAcross * 1.2 };
-}
-
 export function nutAt(nuts: NutBody[], screws: ScrewBody[], x: number, y: number): NutBody | null {
   let best: { nut: NutBody; distance: number } | null = null;
   for (const nut of nuts) {
     const screw = screwOf(screws, nut.screwId);
     if (!screw) continue;
-    const slab = nutPickSlab(screw, nut);
-    if (!pointInSlab(slab, x, y)) continue;
-    const distance = Math.hypot(slab.x - x, slab.y - y);
-    if (!best || distance < best.distance) best = { nut, distance };
+    const distance = nutOutlineDistance(screw, nut, x, y);
+    if (distance > 0) continue;
+    const center = Math.hypot(nutSlab(screw, nut).x - x, nutSlab(screw, nut).y - y);
+    if (!best || center < best.distance) best = { nut, distance: center };
   }
   return best?.nut ?? null;
 }
@@ -644,33 +633,63 @@ function distToArc(x: number, y: number, arc: Arc): number {
   return Math.min(ends[0], ends[1]);
 }
 
-/** Distance from the click to this screw's metal. Infinity when the click misses the outline. */
-function screwPickDistance(screw: ScrewBody, x: number, y: number): number {
-  let distance = Infinity;
-  if (screw.kind === 'straight' && pointInSlab(headSlab(screw), x, y)) distance = 0;
+/** Zero inside a slab. Outside, the distance to the slab edge. */
+function slabOuterDistance(slab: Slab, x: number, y: number): number {
+  const { along, across } = frameOf(slab, x, y);
+  const dx = Math.abs(along) - slab.halfAlong;
+  const dy = Math.abs(across) - slab.halfAcross;
+  if (dx <= 0 && dy <= 0) return 0;
+  return Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
+}
+
+function nutOutlineDistance(screw: ScrewBody, nut: NutBody, x: number, y: number): number {
+  return slabOuterDistance(nutSlab(screw, nut), x, y);
+}
+
+/** Distance from the point to this screw's metal. Zero inside the outline. */
+function screwOutlineDistance(screw: ScrewBody, x: number, y: number): number {
+  let distance = screw.kind === 'straight' ? slabOuterDistance(headSlab(screw), x, y) : Infinity;
   for (const seg of shaftSegments(screw)) {
     const abx = seg.bx - seg.ax;
     const aby = seg.by - seg.ay;
     const len2 = abx * abx + aby * aby || 1;
     const t = Math.max(0, Math.min(1, ((x - seg.ax) * abx + (y - seg.ay) * aby) / len2));
-    distance = Math.min(distance, Math.hypot(seg.ax + abx * t - x, seg.ay + aby * t - y));
+    distance = Math.min(distance, Math.max(0, Math.hypot(seg.ax + abx * t - x, seg.ay + aby * t - y) - SHAFT_CORE));
   }
   const local = toLocal(screw, x, y);
-  for (const arc of bendArcs(screw)) distance = Math.min(distance, distToArc(local.x, local.y, arc));
-  if (distance <= SHAFT_CORE) return distance;
+  for (const arc of bendArcs(screw)) distance = Math.min(distance, Math.max(0, distToArc(local.x, local.y, arc) - SHAFT_CORE));
   for (const rect of buckleRects(screw)) {
     const { along, across } = frameOf(rect, x, y);
-    if (roundedRectDistance(along, across, rect) <= 0) return 0;
+    distance = Math.min(distance, Math.max(0, roundedRectDistance(along, across, rect)));
   }
-  return Infinity;
+  return distance;
+}
+
+export type NearPiece = { kind: 'nut' | 'screw'; id: string; distance: number };
+
+/** Pieces whose real outline is within `finger` of the point. Distance is 0 inside the outline. */
+export function piecesNear(screws: ScrewBody[], nuts: NutBody[], x: number, y: number, finger: number): NearPiece[] {
+  const hits: NearPiece[] = [];
+  for (const nut of nuts) {
+    const screw = screwOf(screws, nut.screwId);
+    if (!screw) continue;
+    const distance = nutOutlineDistance(screw, nut, x, y);
+    if (distance <= finger) hits.push({ kind: 'nut', id: nut.id, distance });
+  }
+  for (const screw of screws) {
+    const distance = screwOutlineDistance(screw, x, y);
+    if (distance <= finger) hits.push({ kind: 'screw', id: screw.id, distance });
+  }
+  hits.sort((a, b) => a.distance - b.distance);
+  return hits;
 }
 
 export function screwAt(screws: ScrewBody[], nuts: NutBody[], x: number, y: number): ScrewBody | null {
   if (nutAt(nuts, screws, x, y)) return null;
   let best: { screw: ScrewBody; distance: number } | null = null;
   for (const screw of screws) {
-    const distance = screwPickDistance(screw, x, y);
-    if (distance === Infinity) continue;
+    const distance = screwOutlineDistance(screw, x, y);
+    if (distance > 0) continue;
     if (!best || distance < best.distance) best = { screw, distance };
   }
   return best?.screw ?? null;

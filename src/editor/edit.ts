@@ -10,31 +10,25 @@ import {
   defaultEdges,
   minEdgeLength,
   resolveEdges,
-  screwLocalBounds,
   runLength,
   shapeRuns,
 } from '../game/parts';
+import { boardBounds } from '../game/camera';
 import { NUT_HALF, stockNuts, toWorld } from '../game/screws';
 
 function levelCenter(board: Board): { x: number; y: number } | null {
   if (board.screws.length === 0) return null;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  const bounds = boardBounds(board);
+  return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+}
+
+/** Slide every screw by the same world offset. Nuts and buckles ride along. */
+export function shiftLevel(board: Board, dx: number, dy: number): void {
   for (const screw of board.screws) {
-    const bounds = screwLocalBounds(screw.kind, screw.edges);
-    for (const x of [bounds.minX, bounds.maxX]) {
-      for (const y of [bounds.minY, bounds.maxY]) {
-        const at = toWorld(screw, x, y);
-        minX = Math.min(minX, at.x);
-        minY = Math.min(minY, at.y);
-        maxX = Math.max(maxX, at.x);
-        maxY = Math.max(maxY, at.y);
-      }
-    }
+    screw.x += dx;
+    screw.y += dy;
+    screw.locks = undefined;
   }
-  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
 /** Move every screw so the level's outline sits on the screen center. */
@@ -76,7 +70,7 @@ export function materialize(board: Board, screw: ScrewBody): void {
 export function settle(board: Board, screw: ScrewBody): void {
   materialize(board, screw);
   const edges = resolveEdges(screw.kind, screw.edges).map((length, index) =>
-    Math.max(minEdgeLength(screw.kind, index), length),
+    Math.max(minEdgeLength(screw.kind, index, keptBuckleT(screw.kind, index, screw.buckleT?.[index]) != null), length),
   );
   screw.edges = edges;
   const runs = shapeRuns(screw.kind, edges);
@@ -132,7 +126,7 @@ export function setEdgeLength(board: Board, screw: ScrewBody, index: number, alo
   const oldLine = runLength(run);
   let nextEdge = along;
   if (screw.kind === 'l' && index === 0) nextEdge = along - SCREW.bend;
-  nextEdge = Math.max(minEdgeLength(screw.kind, index), nextEdge);
+  nextEdge = Math.max(minEdgeLength(screw.kind, index, keptBuckleT(screw.kind, index, screw.buckleT?.[index]) != null), nextEdge);
   const nextLine = screw.kind === 'l' && index === 0 ? SCREW.bend + nextEdge : nextEdge;
   const delta = nextLine - oldLine;
   if (fromDead && Math.abs(delta) > 1e-6) {

@@ -27,6 +27,7 @@ import {
   paletteHex,
   rotateLevelClockwise,
   setBuckleT,
+  shiftLevel,
   setNutT,
   spaceNuts,
   setEdgeLength,
@@ -600,13 +601,7 @@ async function boot(): Promise<void> {
   const nudgeLevel = (designY: number) => {
     const origin = worldFromDesign(DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2, camera.position.x, camera.position.y, camera.zoom);
     const shifted = worldFromDesign(DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2 + designY, camera.position.x, camera.position.y, camera.zoom);
-    const dx = shifted.x - origin.x;
-    const dy = shifted.y - origin.y;
-    for (const screw of board.screws) {
-      screw.x += dx;
-      screw.y += dy;
-      screw.locks = undefined;
-    }
+    shiftLevel(board, shifted.x - origin.x, shifted.y - origin.y);
     draw();
   };
   document.getElementById('level-nudge-up')!.addEventListener('click', () => {
