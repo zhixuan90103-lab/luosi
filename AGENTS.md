@@ -26,7 +26,7 @@
 | iOS 注入 | `scripts/bootstrap-ios.mjs` |
 | 音效方案（未实现） | `docs/AUDIO.md` |
 | 画面零件 | `src/game/parts.ts`。中心线 `screwSpans`。规范见 `docs/PARTS.md` |
-| 当前操作 | `play.ts` 收指针并每帧绘制。规则拆在 `screws.ts`（滑、挡、轮廓）、`intent.ts`（点选、松手补量）、`feedback.ts`（撞击闪、准备离场变亮）、`outline.ts`（选中描边，按下即亮）、`fall.ts`（重力离场）、`hapticsPlay.ts`（拖动震会话）。松手后盘上没有螺丝和扣，`main.ts` 弹出 `#result` |
+| 当前操作 | `play.ts` 收指针并每帧绘制。规则拆在 `screws.ts`（滑、挡、轮廓）、`intent.ts`（点选、松手补量）、`feedback.ts`（挡住的件闪一次、准备离场变亮）、`praise.ts`（离场夸奖字，见 `docs/SCREWS.md`「夸奖」）、`outline.ts`（选中描边，按下即亮）、`fall.ts`（重力离场）、`hapticsPlay.ts`（拖动震会话）。松手后盘上没有螺丝和扣，`main.ts` 弹出 `#result` |
 | 手机设置 | `src/game/phoneSettings.ts`。试玩页右上角齿轮开震动测试、各档手感、缩放，以及螺丝、扣、银卡扣的粗糙度和金属度 |
 | 规则 | `docs/SCREWS.md`。试玩读 `public/levels/` |
 
@@ -68,8 +68,8 @@ npm run ios
 ## 业务怎么加
 
 - 外形和中心线：改 `src/game/parts.ts`，并同步 `docs/PARTS.md`。已定稿的尺寸、倒角不要跟着操作改。舞台、六色和一关里的配色在 `src/game/palette.ts`，规范在 `docs/SCREWS.md` 的颜色一节  
-- 拖动和阻挡：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡、离场、点选、补量、闪光或描边公式。直段和弯只从 `screwSpans` 读
-- 点选和松手补量改 `intent.ts`。轮廓距离和 `releaseSlack` 仍在 `screws.ts`。离场改 `fall.ts`，闪光改 `feedback.ts`，选中描边改 `outline.ts`。描边是 WebGPU 屏幕遮罩，跟实际网格走，按下立刻全亮，松手后淡出，不含银卡扣。空白按下不占指针，另一根手指可以开始操作
+- 拖动和阻挡：只改 `src/game/screws.ts`，并同步 `docs/SCREWS.md`。`play.ts` 不写阻挡、离场、点选、补量、闪光、描边或夸奖公式。直段和弯只从 `screwSpans` 读
+- 点选和松手补量改 `intent.ts`。轮廓距离和 `releaseSlack` 仍在 `screws.ts`。离场改 `fall.ts`，闪光改 `feedback.ts`，夸奖改 `praise.ts`，选中描边改 `outline.ts`。规范见 `docs/SCREWS.md`「夸奖」。撞上时闪的是挡住的那件，含银卡扣，正在拖的件不闪。描边是 WebGPU 屏幕遮罩，跟实际网格走，按下立刻全亮，松手后淡出，不含银卡扣。空白按下不占指针，另一根手指可以开始操作
 - 试玩震动改 `hapticFeel.ts`（齿轮数值）和 `hapticsPlay.ts`（一次拖动一条会话）。`play.ts` 只调用 `playHaptics`。规范见 `docs/HAPTICS.md` §3.3
 - 松手只读最后 100 毫秒。方向相反或这段没有沿杆移动，不补。慢于 250 设计像素/秒上限是 5%，达到则上限 20%。20% 不是保证脱离。拖的时候仍按真实接触停
 - 关卡：`public/levels/`。读档在 `src/game/levelio.ts`。没有扣的数据时按 `screwLayout` 生成

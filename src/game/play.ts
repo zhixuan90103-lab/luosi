@@ -9,12 +9,13 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH, isInDesignBounds, type StageLayout } from 
 import { mountOutline } from './outline';
 import { aimNut, authoredLayout, nutMesh, PART, screwMassCenter, screwMesh } from './parts';
 import { fallPastView, FALL_FRONT, nutDepartureSpin, parkInFront, screwDepartureSpin, stepFall, stillSpin, type FallMotion, type FallSpin } from './fall';
-import { dragScrew, nutAxis, nutPastTip, nutSpin, nutWorld, piecesNear, releaseSlack, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew, toWorld } from './screws';
+import { dragScrew, nutAxis, nutBlocker, nutPastTip, nutSpin, nutWorld, piecesNear, releaseSlack, screwBlocker, screwHeld, screwSlideAxis, seatedLayout, slideNut, slideScrew, toWorld, type Blocker } from './screws';
 import type { Board } from './board';
-import { contactLatch, mountFeedback, stepContact } from './feedback';
+import { contactLatch, mountFeedback, stepContact, stepStall, type ContactLatch } from './feedback';
 import { playHaptics } from './hapticsPlay';
-import { INTENT_CLEAR, INTENT_FINGER, intentWorld, moveAim, pressAim, releaseFlick, releasePad, rememberStroke, type Aim, type AimPiece, type StrokeSample } from './intent';
-import { onStageZoom, stageZoomValue, viewSize, worldFromDesign } from './camera';
+import { INTENT_CLEAR, INTENT_FINGER, INTENT_FLICK, INTENT_NEAR, intentWorld, moveAim, pressAim, releaseFlick, releasePad, rememberStroke, type Aim, type AimPiece, type StrokeSample } from './intent';
+import { designFromWorld, onStageZoom, stageZoomValue, viewSize, worldFromDesign } from './camera';
+import { awardPraise, breakPraise, freshPraise, resetPraise, showPraise, type PraiseCombo } from './praise';
 import { releaseFinish } from './finish';
 
 export type PlayHandles = {
@@ -50,7 +51,7 @@ export function mountPlay(options: {
   onScore?: (points: number) => void;
   onCleared?: () => void;
 }): PlayHandles {
-  const { renderer, scene, camera, canvas, onCleared } = options;
+  const { renderer, scene, camera, canvas, onScore, onCleared } = options;
   const root = new THREE.Group();
   scene.add(root);
 
@@ -62,13 +63,14 @@ export function mountPlay(options: {
   let fallers: ({ mesh: THREE.Object3D } & FallMotion)[] = [];
   const spinAxis = new THREE.Vector3();
   let fallerFront = FALL_FRONT;
-  let nutDrag: { id: string; t0: number; x: number; y: number; armed: boolean; free: number } | null = null;
-  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number; armed: boolean; free: number; sign: number; samples: StrokeSample[] } | null = null;
+  let nutDrag: { id: string; t0: number; x: number; y: number; armed: boolean; free: number; stall: ContactLatch } | null = null;
+  let screwDrag: { id: string; x0: number; y0: number; x: number; y: number; armed: boolean; free: number; stall: ContactLatch; sign: number; samples: StrokeSample[] } | null = null;
   let aim: Aim = { phase: 'off' };
   const feedback = mountFeedback();
   const selectionOutline = mountOutline(renderer, scene, camera);
   let pointerId: number | null = null;
   let awaitingNext = false;
+  const praise: PraiseCombo = freshPraise();
 
   let last = performance.now();
 
@@ -76,13 +78,20 @@ export function mountPlay(options: {
     return worldFromDesign(dx, dy, camera.position.x, camera.position.y, camera.zoom);
   }
 
-  function worldFromEvent(event: PointerEvent): { x: number; y: number } | null {
+  /** Design pixels of this event, including a point past the stage edge. */
+  function pointerDesign(event: PointerEvent): { x: number; y: number } | null {
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
-    const dx = ((event.clientX - rect.left) / rect.width) * DESIGN_WIDTH;
-    const dy = ((event.clientY - rect.top) / rect.height) * DESIGN_HEIGHT;
-    if (!isInDesignBounds(dx, dy)) return null;
-    return designToWorld(dx, dy);
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * DESIGN_WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * DESIGN_HEIGHT,
+    };
+  }
+
+  function worldFromEvent(event: PointerEvent): { x: number; y: number } | null {
+    const design = pointerDesign(event);
+    if (!design || !isInDesignBounds(design.x, design.y)) return null;
+    return designToWorld(design.x, design.y);
   }
 
   function clearViews(): void {
@@ -102,6 +111,7 @@ export function mountPlay(options: {
     feedback.clear();
     nutDrag = null;
     screwDrag = null;
+    resetPraise(praise);
     playHaptics.stop();
   }
 
@@ -176,6 +186,18 @@ export function mountPlay(options: {
     }
   }
 
+  function designOf(x: number, y: number): { x: number; y: number } {
+    return designFromWorld(x, y, camera.position.x, camera.position.y, camera.zoom);
+  }
+
+  /** One screw, or one nut pulled off its rod. Nuts that fall with their screw are not a second award. */
+  function praiseAt(design: { x: number; y: number }): void {
+    const award = awardPraise(praise);
+    if (!award) return;
+    showPraise(design.x, design.y, award.rank);
+    onScore?.(award.points);
+  }
+
   function noteClear(): void {
     if (board.screws.length === 0 && (board.nuts?.length ?? 0) === 0) awaitingNext = true;
   }
@@ -204,7 +226,7 @@ export function mountPlay(options: {
     noteClear();
   }
 
-  function finishLoose(cancel: boolean): void {
+  function finishLoose(cancel: boolean, lift: { x: number; y: number } | null): void {
     playHaptics.stop();
     const drag = screwDrag;
     screwDrag = null;
@@ -229,6 +251,7 @@ export function mountPlay(options: {
       return;
     }
     dropScrew(screw.id);
+    praiseAt(lift ?? designOf(drag.x, drag.y));
     playHaptics.pulse('clear');
   }
 
@@ -250,10 +273,14 @@ export function mountPlay(options: {
     const result = dragScrew(board.screws, board.nuts ?? [], screw.id, from, world);
     const moved = Math.hypot(screw.x - beforeX, screw.y - beforeY);
     playHaptics.slide({ x: world.x, y: world.y, nowMs: performance.now(), halted: result.blocked });
+    const stopped = screwBlocker(board.screws, board.nuts ?? [], screw.id, sign);
     if (stepContact(screwDrag, moved, result.blocked)) {
       playHaptics.pulse('hit');
-      const view = screwViews.find((item) => item.id === screw.id);
-      if (view) feedback.impact(view.mesh);
+      breakPraise(praise);
+      glanceBlocker(stopped);
+    } else if (stepStall(screwDrag.stall, moved, result.blocked, sign !== 0)) {
+      breakPraise(praise);
+      glanceBlocker(stopped);
     }
     placeScrew(screw.id);
     const loose = !screwHeld(screw, board.nuts ?? []);
@@ -281,17 +308,22 @@ export function mountPlay(options: {
       halted: offRod || result.blocked,
       spinDelta: offRod || result.blocked ? undefined : nutSpin(nut.t) - nutSpin(before),
     });
+    const push = Math.sign(target - before);
+    const stopped = nutBlocker(board.nuts, board.screws, nut.id, push);
     if (!offRod && stepContact(nutDrag, moved, result.blocked)) {
       playHaptics.pulse('hit');
-      const view = nutViews.find((item) => item.id === nut.id);
-      if (view) feedback.impact(view.mesh);
+      breakPraise(praise);
+      glanceBlocker(stopped);
+    } else if (!offRod && stepStall(nutDrag.stall, moved, result.blocked, push !== 0)) {
+      breakPraise(praise);
+      glanceBlocker(stopped);
     }
     placeNutMesh(nut.id);
     const view = nutViews.find((item) => item.id === nut.id);
     feedback.hint(nutPastTip(screw, nut) && view ? [view.mesh] : []);
   }
 
-  function releaseNut(): void {
+  function releaseNut(lift: { x: number; y: number } | null): void {
     playHaptics.stop();
     const drag = nutDrag;
     nutDrag = null;
@@ -300,9 +332,11 @@ export function mountPlay(options: {
     const screw = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
     if (!nut || !screw || !nutPastTip(screw, nut)) return;
     const axis = nutAxis(screw, nut);
+    const at = nutWorld(screw, nut);
     const view = nutViews.find((item) => item.id === nut.id);
     board.nuts = board.nuts.filter((item) => item.id !== nut.id);
     if (view) dropMesh(view.mesh, nutDepartureSpin(axis));
+    praiseAt(lift ?? designOf(at.x, at.y));
     playHaptics.pulse('clear');
     noteClear();
   }
@@ -319,14 +353,48 @@ export function mountPlay(options: {
     camera.updateProjectionMatrix();
   }
 
+  function glanceBlocker(blocker: Blocker | null): void {
+    if (!blocker) return;
+    if (blocker.kind === 'nut') {
+      const view = nutViews.find((item) => item.id === blocker.id);
+      if (view) feedback.glance([view.mesh]);
+      return;
+    }
+    if (blocker.kind === 'screw') {
+      const view = screwViews.find((item) => item.id === blocker.id);
+      if (view) feedback.glance([view.mesh]);
+      return;
+    }
+    const meshes = buckleViews.filter((item) => item.screwId === blocker.id).map((item) => item.mesh);
+    if (meshes.length > 0) feedback.glance(meshes);
+  }
+
   function beginNut(id: string, t0: number, x: number, y: number): void {
-    nutDrag = { id, t0, x, y, ...contactLatch() };
+    nutDrag = { id, t0, x, y, ...contactLatch(), stall: contactLatch() };
     playHaptics.pulse('grab');
   }
 
   function beginScrew(id: string, x: number, y: number, at: { x: number; y: number }): void {
-    screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch(), sign: 0, samples: [{ t: performance.now(), x, y }] };
+    screwDrag = { id, x0: at.x, y0: at.y, x, y, ...contactLatch(), stall: contactLatch(), sign: 0, samples: [{ t: performance.now(), x, y }] };
     playHaptics.pulse('grab');
+  }
+
+  /** A screw still in its buckle that one flick pad can free. A nut that can still step toward the tip. */
+  function pieceOpen(kind: 'nut' | 'screw', id: string): boolean {
+    const nuts = board.nuts ?? [];
+    if (kind === 'screw') {
+      const pad = intentWorld(INTENT_FLICK, camera.zoom);
+      return releaseSlack(board.screws, nuts, id, 1, pad) !== null || releaseSlack(board.screws, nuts, id, -1, pad) !== null;
+    }
+    const nut = nuts.find((item) => item.id === id);
+    const host = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
+    if (!nut || !host || nutPastTip(host, nut)) return false;
+    const copy = nuts.map((item) => ({ ...item }));
+    const moved = copy.find((item) => item.id === id);
+    if (!moved) return false;
+    const from = moved.t;
+    slideNut(copy, board.screws, id, from + 0.05);
+    return moved.t > from + 1e-4;
   }
 
   function aimPieces(world: { x: number; y: number }): AimPiece[] {
@@ -337,11 +405,26 @@ export function mountPlay(options: {
         const nut = board.nuts?.find((item) => item.id === hit.id);
         const host = nut ? board.screws.find((item) => item.id === nut.screwId) : undefined;
         if (!nut || !host) continue;
-        pieces.push({ kind: 'nut', id: nut.id, hostId: host.id, axis: nutAxis(host, nut), inside: hit.distance <= 0, distance: hit.distance });
+        pieces.push({
+          kind: 'nut',
+          id: nut.id,
+          hostId: host.id,
+          axis: nutAxis(host, nut),
+          inside: hit.distance <= 0,
+          distance: hit.distance,
+          open: pieceOpen('nut', nut.id),
+        });
       } else {
         const screw = board.screws.find((item) => item.id === hit.id);
         if (!screw) continue;
-        pieces.push({ kind: 'screw', id: screw.id, axis: screwSlideAxis(screw), inside: hit.distance <= 0, distance: hit.distance });
+        pieces.push({
+          kind: 'screw',
+          id: screw.id,
+          axis: screwSlideAxis(screw),
+          inside: hit.distance <= 0,
+          distance: hit.distance,
+          open: pieceOpen('screw', screw.id),
+        });
       }
     }
     return pieces;
@@ -390,7 +473,14 @@ export function mountPlay(options: {
     const world = worldFromEvent(event);
     if (!world) return;
     if (aim.phase !== 'off') {
-      const stepped = moveAim(aim, aimPieces(world), world.x, world.y, intentWorld(INTENT_CLEAR, camera.zoom));
+      const stepped = moveAim(
+        aim,
+        aimPieces(world),
+        world.x,
+        world.y,
+        intentWorld(INTENT_CLEAR, camera.zoom),
+        intentWorld(INTENT_NEAR, camera.zoom),
+      );
       aim = stepped.aim;
       if (stepped.lock) lockAim(stepped.lock, world);
     }
@@ -402,17 +492,14 @@ export function mountPlay(options: {
     if (event.pointerId !== pointerId) return;
     dropPointer();
     aim = { phase: 'off' };
+    const lift = pointerDesign(event);
     if (screwDrag) {
-      const world = worldFromEvent(event);
-      rememberStroke(screwDrag.samples, {
-        t: performance.now(),
-        x: world?.x ?? screwDrag.x,
-        y: world?.y ?? screwDrag.y,
-      });
+      const world = lift ? designToWorld(lift.x, lift.y) : { x: screwDrag.x, y: screwDrag.y };
+      rememberStroke(screwDrag.samples, { t: performance.now(), x: world.x, y: world.y });
     }
-    releaseNut();
+    releaseNut(lift);
     feedback.hint([]);
-    finishLoose(false);
+    finishLoose(false, lift);
     if (awaitingNext) {
       awaitingNext = false;
       onCleared?.();

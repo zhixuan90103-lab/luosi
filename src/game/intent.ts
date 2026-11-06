@@ -8,6 +8,13 @@
  * or for one slide axis to lead. A nut on the screw under the point wins over
  * that screw. After a lock the caller stops calling.
  *
+ * When the leading axis has several pieces, a clearly nearer outline still
+ * wins. Outlines within `INTENT_NEAR` of each other prefer a piece that can
+ * still leave: a screw that can clear its own buckle on at least one side
+ * within the flick pad, or a nut that can still advance toward the tip.
+ * That preference does not run on the press, and it does not run once an
+ * outline or a single-piece axis has already locked.
+ *
  * Release. Only a screw, and only on finger-up. The last 100 ms along the
  * shaft picks the pad: slow keeps a short look-ahead, a flick uses a longer
  * one. `screws.ts` then slides to the first pose that has left its buckle.
@@ -24,6 +31,11 @@ export const INTENT_FINGER = 18 / DESIGN_WIDTH;
 export const INTENT_AXIS = 1.5;
 /** |cross| of two slide axes below this means a stroke cannot separate them. */
 export const INTENT_PARALLEL = 0.35;
+/**
+ * Outline gap, as a fraction of design width, treated as a tie on the leading axis.
+ * A wider gap keeps the nearer piece. Literature gives no millimetre for this.
+ */
+export const INTENT_NEAR = 4 / DESIGN_WIDTH;
 
 /** Short release look-ahead. Dragging still stops on the real outline. */
 export const INTENT_SLEEVE = 0.05;
@@ -95,6 +107,11 @@ export type AimPiece = {
   inside: boolean;
   /** Distance to the real outline. Zero when `inside`. */
   distance: number;
+  /**
+   * The piece can still leave on its own axis.
+   * A screw can clear its buckle within the flick pad. A nut can still move toward the tip.
+   */
+  open: boolean;
 };
 
 /** `open` has not reached a piece. `watch` is one piece, not locked. `choose` has two or more. */
@@ -144,11 +161,11 @@ function outlineLock(pieces: AimPiece[]): AimPiece | null {
   return null;
 }
 
-/**
- * The leading slide axis wins when it leads by `INTENT_AXIS` and only one piece uses it.
- * Parallel pieces share an axis, so a stroke cannot name one of them.
- */
-function trendLock(pieces: AimPiece[], dx: number, dy: number, clearAt: number): AimPiece | null {
+function axisClusters(
+  pieces: AimPiece[],
+  dx: number,
+  dy: number,
+): { pieces: AimPiece[]; along: number }[] {
   const clusters: { axis: { x: number; y: number }; pieces: AimPiece[]; along: number }[] = [];
   for (const piece of pieces) {
     const cluster = clusters.find((item) => axesParallel(item.axis, piece.axis));
@@ -156,11 +173,40 @@ function trendLock(pieces: AimPiece[], dx: number, dy: number, clearAt: number):
     else clusters.push({ axis: piece.axis, pieces: [piece], along: Math.abs(dx * piece.axis.x + dy * piece.axis.y) });
   }
   clusters.sort((a, b) => b.along - a.along);
+  return clusters;
+}
+
+/**
+ * The leading slide axis wins when it leads by `INTENT_AXIS` and only one piece uses it.
+ * Parallel pieces share an axis, so a stroke cannot name one of them.
+ */
+function trendLock(pieces: AimPiece[], dx: number, dy: number, clearAt: number): AimPiece | null {
+  const clusters = axisClusters(pieces, dx, dy);
   const best = clusters[0];
   const second = clusters[1]?.along ?? 0;
   if (!best || best.along < clearAt || best.along < second * INTENT_AXIS) return null;
   if (best.pieces.length !== 1) return null;
   return best.pieces[0];
+}
+
+/**
+ * Leading axis, several pieces, after the same travel `trendLock` requires.
+ * A piece nearer than `nearAt` wins on distance. Inside that band, one piece
+ * that can still leave wins over pieces that cannot. A band that is all open
+ * or all closed stays undecided.
+ */
+function openLock(pieces: AimPiece[], dx: number, dy: number, clearAt: number, nearAt: number): AimPiece | null {
+  const clusters = axisClusters(pieces, dx, dy);
+  const best = clusters[0];
+  const second = clusters[1]?.along ?? 0;
+  if (!best || best.pieces.length < 2) return null;
+  if (best.along < clearAt || best.along < second * INTENT_AXIS) return null;
+  const closest = nearest(best.pieces);
+  const band = best.pieces.filter((piece) => piece.distance <= closest.distance + nearAt);
+  if (band.length === 1) return closest;
+  const leaving = band.filter((piece) => piece.open);
+  if (leaving.length === 0 || leaving.length === band.length) return null;
+  return nearest(leaving);
 }
 
 function locked(piece: AimPiece): AimStep {
@@ -175,9 +221,18 @@ function watch(origin: { x: number; y: number }, piece: AimPiece): AimStep {
   return { aim: { phase: 'watch', x: origin.x, y: origin.y, kind: piece.kind, id: piece.id }, lock: null };
 }
 
-/** Several candidates: an outline first, otherwise the leading axis. */
-function choose(origin: { x: number; y: number }, pieces: AimPiece[], x: number, y: number, clearAt: number): AimStep {
-  const piece = outlineLock(pieces) ?? trendLock(pieces, x - origin.x, y - origin.y, clearAt);
+/** Several candidates: an outline, then one leading axis, then a near-tie that can leave. */
+function choose(
+  origin: { x: number; y: number },
+  pieces: AimPiece[],
+  x: number,
+  y: number,
+  clearAt: number,
+  nearAt: number,
+): AimStep {
+  const dx = x - origin.x;
+  const dy = y - origin.y;
+  const piece = outlineLock(pieces) ?? trendLock(pieces, dx, dy, clearAt) ?? openLock(pieces, dx, dy, clearAt, nearAt);
   if (piece) return locked(piece);
   return held({ phase: 'choose', x: origin.x, y: origin.y });
 }
@@ -201,11 +256,11 @@ export function pressAim(pieces: AimPiece[], x: number, y: number): AimStep {
  * outline is entered. A second piece uses `choose`. Dropping back to one
  * piece does not lock. After a lock the caller stops calling this.
  */
-export function moveAim(aim: Aim, pieces: AimPiece[], x: number, y: number, clearAt: number): AimStep {
+export function moveAim(aim: Aim, pieces: AimPiece[], x: number, y: number, clearAt: number, nearAt: number): AimStep {
   if (aim.phase === 'off') return held(aim);
   const origin = aim;
-  if (aim.phase === 'choose') return choose(origin, pieces, x, y, clearAt);
-  if (pieces.length >= 2) return choose(origin, pieces, x, y, clearAt);
+  if (aim.phase === 'choose') return choose(origin, pieces, x, y, clearAt, nearAt);
+  if (pieces.length >= 2) return choose(origin, pieces, x, y, clearAt, nearAt);
   if (pieces.length === 0) return held({ phase: 'open', x: origin.x, y: origin.y });
   const piece = pieces[0];
   if (aim.phase === 'watch' && samePiece(piece, aim.kind, aim.id) && !piece.inside) return held(aim);

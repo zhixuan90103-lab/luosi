@@ -224,6 +224,7 @@ header {
   text-align: center;
 }
 
+/* Above the HUD and the gear panel. The clear screen stays above this. */
 .praise {
   position: absolute;
   z-index: 4;

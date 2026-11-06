@@ -457,6 +457,127 @@ function poseBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[]): bo
   return hitsOwnBuckle(screw, nuts) || hitsForeign(screw, nuts, screws);
 }
 
+/** The piece a stalled slide is touching. `buckle` is the silver lock on `id`. */
+export type Blocker = { kind: 'screw' | 'nut' | 'buckle'; id: string };
+
+function ownBlocker(screw: ScrewBody, nuts: NutBody[]): Blocker | null {
+  const rects = buckleRects(screw);
+  if (rects.length === 0) return null;
+  for (const nut of nuts) {
+    if (nut.screwId !== screw.id) continue;
+    if (rects.some((rect) => slabHitsRect(nutSlab(screw, nut), rect))) return { kind: 'nut', id: nut.id };
+  }
+  if (hitsOwnBuckle(screw, [])) return { kind: 'buckle', id: screw.id };
+  return null;
+}
+
+function foreignBlocker(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[]): Blocker | null {
+  const tubes = tubeCircles(screw);
+  const slabs = capSlabs(screw, nuts);
+  for (const other of screws) {
+    if (other.id === screw.id) continue;
+    const foreignTubes = tubeCircles(other);
+    const foreignHead = capSlabs(other, []).filter(() => other.kind === 'straight');
+    const foreignRects = buckleRects(other);
+    const hitsNut = (nut: NutBody): boolean => {
+      const slab = nutSlab(other, nut);
+      return tubes.some((tube) => circleHitsSlab(tube, slab)) || slabs.some((item) => slabHitsRect(item, { ...slab, radius: 0, hole: false }));
+    };
+    for (const nut of nuts) {
+      if (nut.screwId !== other.id) continue;
+      if (hitsNut(nut)) return { kind: 'nut', id: nut.id };
+    }
+    const hitsBody =
+      tubes.some((tube) => foreignTubes.some((otherTube) => circlesHit(tube, otherTube)) || foreignHead.some((slab) => circleHitsSlab(tube, slab))) ||
+      slabs.some((slab) => foreignTubes.some((tube) => circleHitsSlab(tube, slab)) || foreignHead.some((otherSlab) => slabHitsRect(slab, { ...otherSlab, radius: 0, hole: false })));
+    if (hitsBody) return { kind: 'screw', id: other.id };
+    const hitsBuckle =
+      tubes.some((tube) => foreignRects.some((rect) => circleHitsRect(tube, rect, false))) ||
+      slabs.some((slab) => foreignRects.some((rect) => slabHitsRect(slab, rect)));
+    if (hitsBuckle) return { kind: 'buckle', id: other.id };
+  }
+  return null;
+}
+
+/**
+ * Who stops this screw. The resting pose is the last free one, so `sign`
+ * probes one slide step into the push. The screw is put back.
+ */
+export function screwBlocker(screws: ScrewBody[], nuts: NutBody[], id: string, sign: number): Blocker | null {
+  const screw = screwOf(screws, id);
+  if (!screw) return null;
+  const here = ownBlocker(screw, nuts) ?? foreignBlocker(screw, nuts, screws);
+  if (here || sign === 0) return here;
+  const axis = screwSlideAxis(screw);
+  const x = screw.x;
+  const y = screw.y;
+  screw.x = x + axis.x * sign * 0.02;
+  screw.y = y + axis.y * sign * 0.02;
+  const probed = ownBlocker(screw, nuts) ?? foreignBlocker(screw, nuts, screws);
+  screw.x = x;
+  screw.y = y;
+  return probed;
+}
+
+/**
+ * Who stops this nut. `sign` is the push along the run. A resting pose that
+ * is still just free is probed one step that way, then put back.
+ */
+export function nutBlocker(nuts: NutBody[], screws: ScrewBody[], id: string, sign: number): Blocker | null {
+  const nut = nuts.find((item) => item.id === id);
+  const screw = nut ? screwOf(screws, nut.screwId) : undefined;
+  if (!nut || !screw) return null;
+  const read = (): Blocker | null => nutBlockerAt(nuts, screws, nut, screw);
+  const here = read();
+  if (here || sign === 0) return here;
+  const t = nut.t;
+  nut.t = t + sign * 0.02;
+  const probed = read();
+  nut.t = t;
+  return probed;
+}
+
+/** A silver lock sits on this straight run, so the dead end the nut meets is that buckle. */
+function buckleOnRun(screw: ScrewBody, run: { x0: number; y0: number; x1: number; y1: number }): boolean {
+  const dx = run.x1 - run.x0;
+  const dy = run.y1 - run.y0;
+  const span = Math.hypot(dx, dy) || 1;
+  return (screw.locks ?? []).some((lock) => {
+    const along = ((lock.x - run.x0) * dx + (lock.y - run.y0) * dy) / span;
+    const across = Math.abs((lock.x - run.x0) * -dy + (lock.y - run.y0) * dx) / span;
+    return across < 0.05 && along >= -0.01 && along <= span;
+  });
+}
+
+function nutBlockerAt(nuts: NutBody[], screws: ScrewBody[], nut: NutBody, screw: ScrewBody): Blocker | null {
+  const run = runOf(screw, nut.run);
+  for (const other of nuts) {
+    if (other.id === nut.id || other.screwId !== nut.screwId || other.run !== nut.run) continue;
+    if (other.t < nut.t && nut.t <= other.t + NUT_HALF * 2 + 1e-3) return { kind: 'nut', id: other.id };
+    if (other.t > nut.t && nut.t >= other.t - NUT_HALF * 2 - 1e-3) return { kind: 'nut', id: other.id };
+  }
+  if (nut.t <= run.minT + 1e-3) {
+    if (buckleOnRun(screw, run)) return { kind: 'buckle', id: screw.id };
+    return { kind: 'screw', id: screw.id };
+  }
+  const slab = nutSlab(screw, nut);
+  if (buckleRects(screw).some((rect) => slabHitsRect(slab, rect))) return { kind: 'buckle', id: screw.id };
+  for (const other of screws) {
+    if (other.id === screw.id) continue;
+    if (tubeCircles(other).some((tube) => circleHitsSlab(tube, slab))) return { kind: 'screw', id: other.id };
+    for (const foreign of nuts) {
+      if (foreign.screwId !== other.id) continue;
+      const otherSlab = nutSlab(other, foreign);
+      if (slabHitsRect(slab, { ...otherSlab, radius: 0, hole: false })) return { kind: 'nut', id: foreign.id };
+    }
+    if (other.kind === 'straight' && capSlabs(other, []).some((head) => slabHitsRect(slab, { ...head, radius: 0, hole: false }))) {
+      return { kind: 'screw', id: other.id };
+    }
+    if (buckleRects(other).some((rect) => slabHitsRect(slab, rect))) return { kind: 'buckle', id: other.id };
+  }
+  return null;
+}
+
 /** A nut slab against its own buckle and every other screw. The straight rod is not a nut. */
 function nutBlocked(screw: ScrewBody, nuts: NutBody[], screws: ScrewBody[], nut: NutBody): boolean {
   const slab = nutSlab(screw, nut);
@@ -506,7 +627,8 @@ export function slideNut(
   const wanted = Math.min(hi, Math.max(lo, target));
   const from = nut.t;
   const dir = Math.sign(wanted - from);
-  if (dir === 0) return { blocked: false };
+  // Already against a neighbour or the dead end: the push was clamped away.
+  if (dir === 0) return { blocked: target < lo - 1e-4 || target > hi + 1e-4 };
   let safe = from;
   let blocked = false;
   const steps = Math.max(1, Math.ceil(Math.abs(wanted - from) / 0.02));

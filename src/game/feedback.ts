@@ -1,7 +1,7 @@
 /**
  * Glow only. It never writes the board pose.
- * A hit flashes the piece. A screw that is already clear of its buckles
- * eases brighter until the finger lets go.
+ * A hit flashes the piece that stopped the slide, including a silver buckle.
+ * A screw that is already clear of its buckles eases brighter until the finger lets go.
  */
 
 import * as THREE from 'three';
@@ -10,6 +10,9 @@ const GLOW = 0.16;
 const GLOW_SECONDS = 0.18;
 const HINT_GLOW = 0.22;
 const HINT_SECONDS = 0.08;
+/** Brighter and shorter than a moving hit. The piece that stopped the slide flashes once. */
+const GLANCE_GLOW = 0.42;
+const GLANCE_SECONDS = 0.09;
 /** Free travel, in world units, before another hit may flash. */
 export const HIT_REARM = 0.03;
 
@@ -41,8 +44,34 @@ export function contactFeel(
   return { fire: false, armed: armed || next > HIT_REARM, free: next };
 }
 
+/**
+ * True once when a push is blocked and the piece does not move.
+ * Rearms after the same free travel as a hit.
+ */
+export function stepStall(latch: ContactLatch, moved: number, blocked: boolean, pushing: boolean): boolean {
+  const feel = stallFeel(latch.armed, latch.free, moved, blocked, pushing);
+  latch.armed = feel.armed;
+  latch.free = feel.free;
+  return feel.fire;
+}
+
+export function stallFeel(
+  armed: boolean,
+  free: number,
+  moved: number,
+  blocked: boolean,
+  pushing: boolean,
+): { fire: boolean; armed: boolean; free: number } {
+  if (pushing && blocked && moved <= 1e-4) {
+    return { fire: armed, armed: armed ? false : armed, free: 0 };
+  }
+  const next = free + moved;
+  return { fire: false, armed: armed || !blocked || next > HIT_REARM, free: next };
+}
+
 export function mountFeedback() {
   let glow: { mesh: THREE.Object3D; left: number } | null = null;
+  let glance: { meshes: THREE.Object3D[]; left: number } | null = null;
   let hints: { mesh: THREE.Object3D; level: number; target: number }[] = [];
   const baseColors = new WeakMap<THREE.MeshStandardMaterial, THREE.Color>();
 
@@ -92,6 +121,20 @@ export function mountFeedback() {
       setGlow(mesh, GLOW);
       glow = { mesh, left: GLOW_SECONDS };
     },
+    /** The piece that stopped a slide, including every silver buckle on that screw. */
+    glance(meshes: THREE.Object3D[]): void {
+      if (meshes.length === 0) return;
+      if (glance) {
+        for (const mesh of glance.meshes) {
+          if (!meshes.includes(mesh) && glow?.mesh !== mesh) releaseImpact(mesh);
+        }
+      }
+      for (const mesh of meshes) {
+        if (glow?.mesh === mesh) continue;
+        setGlow(mesh, GLANCE_GLOW);
+      }
+      glance = { meshes, left: GLANCE_SECONDS };
+    },
     /** Pieces that will fall when the finger lets go. */
     hint(meshes: THREE.Object3D[]): void {
       for (const item of hints) item.target = meshes.includes(item.mesh) ? 1 : 0;
@@ -110,11 +153,26 @@ export function mountFeedback() {
           releaseImpact(mesh);
         }
       }
+      if (glance) {
+        glance.left -= dt;
+        const level = Math.max(0, glance.left / GLANCE_SECONDS) * GLANCE_GLOW;
+        for (const mesh of glance.meshes) {
+          if (glow?.mesh === mesh) continue;
+          setGlow(mesh, level);
+        }
+        if (glance.left <= 0) {
+          const meshes = glance.meshes;
+          glance = null;
+          for (const mesh of meshes) {
+            if (glow?.mesh !== mesh) releaseImpact(mesh);
+          }
+        }
+      }
       const hintStep = dt / HINT_SECONDS;
       for (const item of hints) {
         if (item.level < item.target) item.level = Math.min(item.target, item.level + hintStep);
         else if (item.level > item.target) item.level = Math.max(item.target, item.level - hintStep);
-        if (glow?.mesh === item.mesh) continue;
+        if (glow?.mesh === item.mesh || glance?.meshes.includes(item.mesh)) continue;
         paintHint(item.mesh, item.level);
       }
       hints = hints.filter((item) => item.target > 0 || item.level > 0);
@@ -122,6 +180,8 @@ export function mountFeedback() {
     clear(): void {
       if (glow) setGlow(glow.mesh, 0);
       glow = null;
+      if (glance) for (const mesh of glance.meshes) setGlow(mesh, 0);
+      glance = null;
       for (const item of hints) paintHint(item.mesh, 0);
       hints = [];
     },
